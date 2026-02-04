@@ -1,9 +1,11 @@
+'use client';
+
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc } from '../services/firebase';
+import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, limit, orderBy } from '../lib/firebase'; // Added orderBy, limit
 import { processAtomicSale } from '../services/inventoryService';
-import { Product, Transaction, CategoryState, RoleDefinition } from '../types'; // Adjust imports
-import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../constants'; // Fallbacks
-import { useAuth } from './AuthContext';
+import { Product, Transaction, CategoryState, RoleDefinition } from '../lib/types'; // Adjust imports
+import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../lib/constants'; // Fallbacks
+import { useAuth } from './AuthProvider'; // Use local AuthProvider
 
 interface DataContextType {
     products: Product[];
@@ -59,6 +61,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Load Transactions (Real-time)
     useEffect(() => {
+        if (!userProfile) {
+            setTransactions([]); // Clear transactions if logged out
+            return;
+        }
+
         // Optimization: Limit to last 50 transactions to prevent "Query of Death"
         // Note: If orderBy is used, a composite index is needed. For now, we will just rely on basic limits or client-side sort if data is small, 
         // BUT the goal is to prevent massive reads. 
@@ -68,7 +75,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // - MANAGER/CASHIER: Only their branch
         let q = query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(50));
 
-        if (userProfile && userProfile.role !== 'admin-role' && userProfile.branchId) {
+        if (userProfile && userProfile.role !== 'ADMIN' && userProfile.branchId) { // Check Role enum string value
             // Ideally create composite index: branchId + date
             q = query(
                 collection(db, 'transactions'),
@@ -83,12 +90,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             snapshot.forEach((doc) => {
                 items.push(doc.data() as Transaction);
             });
-            // Sort and slice locally for now to avoid Index Error during dev
+            // Sort and slice locally for now to avoid Index Error during dev if index missing
             items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             setTransactions(items.slice(0, 50));
         });
-        return () => unsubscribe();
-    }, []);
+        return () => unsubscribeTransactions();
+    }, [userProfile]); // Added dependency
 
     const addProduct = async (product: Product) => {
         await setDoc(doc(db, 'products', product.id), product);

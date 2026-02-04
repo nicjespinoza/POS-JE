@@ -60,6 +60,7 @@ export interface Product {
 }
 
 export interface InventoryItem {
+  id?: string;
   productId: string;
   branchId: string;
   stock: number;
@@ -96,4 +97,129 @@ export interface FinancialSummary {
 export interface CategoryState {
   income: string[];
   expense: string[];
+}
+
+export enum MovementType {
+  ENTRADA = 'ENTRADA',
+  SALIDA = 'SALIDA',
+  TRANSFERENCIA = 'TRANSFERENCIA',
+  AJUSTE = 'AJUSTE'
+}
+
+export interface InventoryMovement {
+  id: string;
+  productId: string;
+  productName: string;
+  branchId: string;
+  branchName: string;
+  type: MovementType;
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  reason: string;
+  transactionId?: string; // Optional linkage to sales
+  transferToBranchId?: string;
+  userId: string;
+  userName: string;
+  createdAt: string;
+}
+
+export interface InventorySummary {
+  productId: string;
+  productName: string;
+  category: string;
+  image: string;
+  price: number;
+  totalStock: number;
+  stockByBranch: {
+    branchId: string;
+    branchName: string;
+    stock: number;
+    lowStock: boolean;
+  }[];
+}
+
+export type TransferStatus = 'PENDING' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+
+export interface StockTransfer {
+  id: string;
+  originBranchId: string;
+  targetBranchId: string;
+  status: TransferStatus;
+  items: {
+    productId: string;
+    productName: string;
+    quantity: number;
+    // FIFO Propagation: We track exactly which batches (costs) were consumed
+    sourceBatches?: {
+      originalBatchId: string;
+      cost: number;
+      quantity: number;
+    }[];
+  }[];
+  sentBy: string;
+  receivedBy?: string;
+  sentAt: string;
+  receivedAt?: string;
+  note?: string;
+}
+
+export interface InventoryBatch {
+  id: string;
+  productId: string;
+  branchId: string;
+  cost: number;        // Cost per unit at time of purchase
+  initialStock: number;
+  remainingStock: number; // Decreases as items are sold
+  createdAt: string;   // ISO Date, used for FIFO sorting
+  receivedBy: string;  // User ID who received stock
+}
+
+// --- ACCOUNTING MODULE ---
+
+export enum AccountType {
+  ASSET = 'ASSET',       // Activo
+  LIABILITY = 'LIABILITY', // Pasivo
+  EQUITY = 'EQUITY',     // Patrimonio
+  REVENUE = 'REVENUE',   // Ingresos
+  EXPENSE = 'EXPENSE'    // Gastos
+}
+
+export enum AccountNature {
+  DEBIT = 'DEBIT',   // Deudora (Activos, Gastos)
+  CREDIT = 'CREDIT'  // Acreedora (Pasivos, Ingresos, Patrimonio)
+}
+
+export interface Account {
+  id: string;        // e.g., "1.1.01"
+  code: string;      // "1.1.01"
+  name: string;      // "Caja General"
+  type: AccountType;
+  nature: AccountNature;
+  description?: string;
+  isGroup: boolean;  // True if it just groups other accounts (no transactions)
+  level: number;     // Hierarchy level
+  parentId?: string;
+}
+
+export interface JournalEntryLine {
+  accountId: string;     // Reference to Account Code
+  accountName: string;   // Snapshot for history
+  debit: number;
+  credit: number;
+  description?: string; // Line specific detail
+}
+
+export interface JournalEntry {
+  id: string;
+  date: string;
+  description: string;
+  lines: JournalEntryLine[];
+  totalAmount: number; // Sum of debits (should equal credits)
+  referenceId?: string; // Link to Transaction ID
+  referenceType?: 'SALE' | 'EXPENSE' | 'ADJUSTMENT';
+  branchId: string;
+  createdBy: string;
+  createdAt: string;
+  status: 'DRAFT' | 'POSTED' | 'VOID';
 }

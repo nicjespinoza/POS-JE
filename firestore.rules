@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'ADMIN';
+    }
+    
+    function isManager() {
+      return isAuthenticated() && (getUserData().role == 'MANAGER' || getUserData().role == 'ADMIN');
+    }
+    
+    function isCashier() {
+      return isAuthenticated() && (getUserData().role == 'CASHIER' || isManager());
+    }
+
+    // --- Users Collection ---
+    // Administrators can manage all users.
+    // Users can read their own profile.
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isManager());
+      allow write: if isAdmin();
+      // Allow users to create their own profile on first login (if logic requires it)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // --- Products Collection ---
+    // Public read for POS (or restricted to authenticated).
+    // Write only by Managers/Admins.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isManager();
+    }
+
+    // --- Transactions Collection ---
+    // Enforce Branch Isolation
+    // --- Transactions Collection ---
+    // Enforce Branch Isolation & Data Integrity
+    match /transactions/{transactionId} {
+      // READ: Admin sees all. Others only see their branch.
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        (resource.data.branchId == getUserData().branchId)
+      );
+      
+      // CREATE: Helper to verify branch match on create AND Data Integrity
+      // User must be at least a Cashier and can only create for their assigned branch
+      allow create: if isCashier() && (
+        isAdmin() || 
+        (
+           request.resource.data.branchId == getUserData().branchId &&
+           request.resource.data.amount > 0 &&
+           request.resource.data.items.size() > 0 && 
+           request.resource.data.type == 'INCOME' 
+           // Add more schema validation as needed
+        )
+      );
+
+      allow update, delete: if isManager();
+    }
+    
+    // --- Branches Collection ---
+    // All authenticated users can read branches.
+    // Only Admin can modify branches.
+    match /branches/{branchId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // --- Inventory Collection (per branch stock) ---
+    match /inventory/{inventoryId} {
+      // Read: Admin sees all, others see their branch only
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        (resource.data.branchId == getUserData().branchId)
+      );
+      // Write: Managers can update their branch inventory
+      allow write: if isManager() && (
+        isAdmin() || 
+        (request.resource.data.branchId == getUserData().branchId)
+      );
+    }
+
+    // --- Access Control / Authorized Users ---
+    // Source of Truth for Role Assignment
+    match /access_users/{email} {
+      allow read: if true; // Authenticated users (or login page logic) checks this
+      allow write: if isAdmin(); // Only Admin can manage access list
+    }
+
+    // --- Authorized IPs ---
+    match /authorized_ips/{id} {
+        allow read: if true;
+        allow write: if isAdmin();
+    }
+    
+    // --- Categories/Roles/Settings (Global) ---
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
