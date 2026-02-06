@@ -91,7 +91,7 @@ service cloud.firestore {
     // --- Access Control / Authorized Users ---
     // Source of Truth for Role Assignment
     match /access_users/{email} {
-      allow read: if true; // Authenticated users (or login page logic) checks this
+      allow read: if isAuthenticated(); // Authenticated users (or login page logic) checks this
       allow write: if isAdmin(); // Only Admin can manage access list
     }
 
