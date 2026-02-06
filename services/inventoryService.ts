@@ -16,7 +16,8 @@ import {
     Timestamp,
     runTransaction,
     orderBy,
-    limit as firestoreLimit
+    limit as firestoreLimit,
+    serverTimestamp
 } from './firebase';
 import { generateSaleJournalEntry } from './accountingService';
 import {
@@ -96,7 +97,7 @@ export const recordInventoryMovement = async (
     const movementData: InventoryMovement = {
         ...movement,
         id: movementId,
-        createdAt: new Date().toISOString()
+        createdAt: serverTimestamp() as any
     };
 
     await setDoc(doc(db, 'inventory_movements', movementId), movementData);
@@ -114,7 +115,7 @@ export const updateBranchStock = async (
     const inventoryId = `${productId}_${branchId}`;
     await updateDoc(doc(db, 'inventory', inventoryId), {
         stock: newStock,
-        updatedAt: new Date().toISOString()
+        updatedAt: serverTimestamp()
     });
 };
 
@@ -491,7 +492,7 @@ export const processAtomicSale = async (
                     transactionId: transactionData.id,
                     userId,
                     userName: userName, // Ideally passed in
-                    createdAt: new Date().toISOString()
+                    createdAt: serverTimestamp()
                 } as InventoryMovement);
             });
         });

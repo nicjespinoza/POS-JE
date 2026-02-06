@@ -5,7 +5,8 @@ import {
     collection,
     getDocs,
     query,
-    where
+    where,
+    serverTimestamp
 } from './firebase';
 import { StockTransfer, MovementType, InventoryMovement, InventoryBatch } from '../types';
 
@@ -148,8 +149,7 @@ export const createStockTransfer = async (
             status: 'PENDING',
             items: transferItems, // Contains cost info
             sentBy: userId,
-            sentAt: date,
-            note
+            sentAt: serverTimestamp() as any, // Use server time
         };
         transaction.set(doc(db, 'stock_transfers', transferId), transferData);
     });

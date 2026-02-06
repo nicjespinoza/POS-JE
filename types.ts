@@ -65,46 +65,7 @@ export interface InventoryItem {
   branchId: string;
   stock: number;
   lowStockThreshold: number;
-  updatedAt: string;
-}
-
-export interface CartItem extends Product {
-  quantity: number;
-}
-
-export interface Transaction {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  date: string;
-  description: string;
-  items?: CartItem[]; // Only for sales
-  category?: string;
-  paymentMethod?: string;
-  branchId?: string; // Critical for multi-branch
-  userId?: string; // Who processed it
-  customerId?: string; // Linked customer
-  status?: 'COMPLETED' | 'REFUNDED' | 'CANCELLED';
-}
-
-export interface FinancialSummary {
-  totalIncome: number;
-  totalExpenses: number;
-  netProfit: number;
-  transactionCount: number;
-}
-
-export interface CategoryState {
-  income: string[];
-  expense: string[];
-}
-
-export enum MovementType {
-  ENTRADA = 'ENTRADA',
-  SALIDA = 'SALIDA',
-  TRANSFERENCIA = 'TRANSFERENCIA',
-  AJUSTE = 'AJUSTE',
-  DEVOLUCION = 'DEVOLUCION'
+  updatedAt: string | any; // Allow serverTimestamp
 }
 
 export interface InventoryMovement {
@@ -122,51 +83,7 @@ export interface InventoryMovement {
   transferToBranchId?: string;
   userId: string;
   userName: string;
-  createdAt: string;
-}
-
-export interface InventorySummary {
-  productId: string;
-  productName: string;
-  category: string;
-  image: string;
-  price: number;
-  totalStock: number;
-  stockByBranch: {
-    branchId: string;
-    branchName: string;
-    stock: number;
-    lowStock: boolean;
-  }[];
-}
-
-export type TransferStatus = 'PENDING' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
-
-export interface StockTransferItem {
-  productId: string;
-  productName: string;
-  quantity: number;
-  // FIFO Propagation: We track exactly which batches (costs) were consumed
-  sourceBatches?: {
-    originalBatchId: string;
-    cost: number;
-    quantity: number;
-  }[];
-  // Average unit cost of the transferred items (calculated from batches)
-  unitCost?: number;
-}
-
-export interface StockTransfer {
-  id: string;
-  originBranchId: string;
-  targetBranchId: string;
-  status: TransferStatus;
-  items: StockTransferItem[];
-  sentBy: string;
-  receivedBy?: string;
-  sentAt: string;
-  receivedAt?: string;
-  note?: string;
+  createdAt: string | any; // Allow serverTimestamp
 }
 
 export interface InventoryBatch {
@@ -176,7 +93,7 @@ export interface InventoryBatch {
   cost: number;        // Cost per unit at time of purchase
   initialStock: number;
   remainingStock: number; // Decreases as items are sold
-  createdAt: string;   // ISO Date, used for FIFO sorting
+  createdAt: string | any;   // ISO Date, used for FIFO sorting
   receivedBy: string;  // User ID who received stock
 }
 
