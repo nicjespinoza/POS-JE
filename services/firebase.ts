@@ -13,6 +13,29 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
+const requiredEnvVars = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID'
+];
+
+const missingVars = requiredEnvVars.filter(
+  (key) => !import.meta.env[key]
+);
+
+if (missingVars.length > 0) {
+  const errorMessage = `Missing required environment variables: ${missingVars.join(', ')}. Please check your .env file.`;
+  console.error(errorMessage);
+  // Optional: Prevent app from running or alert user
+  if (typeof window !== 'undefined') {
+    alert(errorMessage);
+  }
+  throw new Error(errorMessage);
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);

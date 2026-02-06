@@ -30,8 +30,12 @@ VITE_FIREBASE_PROJECT_ID=posoriental-88648
 VITE_FIREBASE_STORAGE_BUCKET=posoriental-88648.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=485487454134
 VITE_FIREBASE_APP_ID=1:485487454134:web:bc3bf851c588e6d6bec317
+VITE_FIREBASE_MESSAGING_SENDER_ID=485487454134
+VITE_FIREBASE_APP_ID=1:485487454134:web:bc3bf851c588e6d6bec317
 VITE_FIREBASE_MEASUREMENT_ID=G-54E1P0Y5D0
 ```
+
+> **Note**: The application validates these variables at startup. If any are missing, it will show an alert and fail to initialize.
 
 ## Firestore Indexes
 
@@ -39,3 +43,11 @@ The application requires Composite Indexes for performance and sorting. Please c
 
 - `inventory_movements`: `branchId` ASC, `createdAt` DESC
 - `inventory_movements`: `createdAt` DESC
+
+## Development Scripts
+
+- `npm run dev`: Start development server
+- `npm run build`: Build for production
+- `npm run lint`: Run ESLint analysis
+- `npm run typecheck`: Run TypeScript type checking
+- `npm run test`: Run automated tests
