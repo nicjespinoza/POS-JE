@@ -1,0 +1,29 @@
+{
+    "indexes": [
+        {
+            "collectionGroup": "inventory_movements",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "inventory_movements",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        }
+    ],
+    "fieldOverrides": []
+}

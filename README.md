@@ -39,7 +39,13 @@ VITE_FIREBASE_MEASUREMENT_ID=G-54E1P0Y5D0
 
 ## Firestore Indexes
 
-The application requires Composite Indexes for performance and sorting. Please check your Firebase Console console logs if queries fail, as unique index creation links will be provided there.
+The application requires Composite Indexes for performance and sorting. We have provided a `firebase.indexes.json` file which you can deploy using `firebase deploy --only firestore:indexes`.
+
+Required Indexes:
+- Collection: `inventory_movements`
+  - Fields: `branchId` (Ascending) + `createdAt` (Descending)
+- Collection: `inventory_movements`
+  - Fields: `createdAt` (Descending)
 
 - `inventory_movements`: `branchId` ASC, `createdAt` DESC
 - `inventory_movements`: `createdAt` DESC
