@@ -84,7 +84,8 @@ export interface Transaction {
     branchId?: string; // Critical for multi-branch
     userId?: string; // Who processed it
     customerId?: string; // Linked customer
-    status?: 'COMPLETED' | 'REFUNDED' | 'CANCELLED';
+    customerName?: string; // Snapshot of name
+    status?: 'COMPLETED' | 'REFUNDED' | 'CANCELLED' | 'PENDING_VERIFICATION';
 }
 
 export interface FinancialSummary {

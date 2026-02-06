@@ -5,7 +5,7 @@ import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, limit
 import { processAtomicSale } from '../services/inventoryService';
 import { Product, Transaction, CategoryState, RoleDefinition } from '../lib/types'; // Adjust imports
 import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../lib/constants'; // Fallbacks
-import { useAuth } from './AuthProvider'; // Use local AuthProvider
+import { useAuth } from '../contexts/AuthContext'; // Use local AuthProvider
 
 interface DataContextType {
     products: Product[];
@@ -17,9 +17,13 @@ interface DataContextType {
     updateProduct: (p: Product) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     addTransaction: (t: Transaction) => Promise<void>;
-    updateTransaction: (t: Transaction) => Promise<void>; // Add this
-    deleteTransaction: (id: string) => Promise<void>; // Add this
-    // Add other methods as needed
+    updateTransaction: (t: Transaction) => Promise<void>;
+    deleteTransaction: (id: string) => Promise<void>;
+    currency: { symbol: string; code: string; };
+    taxRate: number;
+    lowStockThreshold: number;
+    updateTaxRate: (rate: number) => void;
+    updateLowStockThreshold: (val: number) => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -145,6 +149,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Implement delete
     };
 
+    const [currency, setCurrency] = useState({ symbol: '$', code: 'USD' });
+    const [taxRate, setTaxRate] = useState(0.13); // Default 13% or 0
+    const [lowStockThreshold, setLowStockThreshold] = useState(5);
+
+    const updateTaxRate = (rate: number) => setTaxRate(rate);
+    const updateLowStockThreshold = (val: number) => setLowStockThreshold(val);
+
     return (
         <DataContext.Provider value={{
             products,
@@ -152,6 +163,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             categories,
             roles,
             loadingData,
+            currency,
+            taxRate,
+            lowStockThreshold,
+            updateTaxRate,
+            updateLowStockThreshold,
             addProduct,
             updateProduct,
             deleteProduct,

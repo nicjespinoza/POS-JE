@@ -103,7 +103,8 @@ export enum MovementType {
   ENTRADA = 'ENTRADA',
   SALIDA = 'SALIDA',
   TRANSFERENCIA = 'TRANSFERENCIA',
-  AJUSTE = 'AJUSTE'
+  AJUSTE = 'AJUSTE',
+  DEVOLUCION = 'DEVOLUCION'
 }
 
 export interface InventoryMovement {
@@ -141,22 +142,26 @@ export interface InventorySummary {
 
 export type TransferStatus = 'PENDING' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
 
+export interface StockTransferItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  // FIFO Propagation: We track exactly which batches (costs) were consumed
+  sourceBatches?: {
+    originalBatchId: string;
+    cost: number;
+    quantity: number;
+  }[];
+  // Average unit cost of the transferred items (calculated from batches)
+  unitCost?: number;
+}
+
 export interface StockTransfer {
   id: string;
   originBranchId: string;
   targetBranchId: string;
   status: TransferStatus;
-  items: {
-    productId: string;
-    productName: string;
-    quantity: number;
-    // FIFO Propagation: We track exactly which batches (costs) were consumed
-    sourceBatches?: {
-      originalBatchId: string;
-      cost: number;
-      quantity: number;
-    }[];
-  }[];
+  items: StockTransferItem[];
   sentBy: string;
   receivedBy?: string;
   sentAt: string;

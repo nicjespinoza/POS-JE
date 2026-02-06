@@ -98,14 +98,7 @@ export default function CheckoutPage() {
                 branchId: 'main', // Default for online sales
                 userId: user.uid,
                 customerName: user.displayName || user.email || 'Cliente Web',
-                items: cart.map(item => ({
-                    productId: item.id,
-                    productName: item.name,
-                    quantity: item.quantity,
-                    price: item.price,
-                    cost: 0, // Will be filled by inventory service
-                    branchId: 'main' // Deduct from main branch
-                }))
+                items: cart
             };
 
             // 3. Process Sale (Atomic Inventory Update)

@@ -14,7 +14,9 @@ import {
     getDocs,
     onSnapshot,
     Timestamp,
-    runTransaction
+    runTransaction,
+    orderBy,
+    limit as firestoreLimit
 } from './firebase';
 import { generateSaleJournalEntry } from './accountingService';
 import {
@@ -57,21 +59,30 @@ export const getInventoryByBranch = (
  */
 export const getInventoryMovements = (
     branchId: string,
-    limit: number = 50,
+    limitCount: number = 50,
     callback: (movements: InventoryMovement[]) => void
 ) => {
+    // Requires Composite Index: branchId ASC, createdAt DESC
     const q = branchId === 'all'
-        ? query(collection(db, 'inventory_movements'))
-        : query(collection(db, 'inventory_movements'), where('branchId', '==', branchId));
+        ? query(
+            collection(db, 'inventory_movements'),
+            orderBy('createdAt', 'desc'),
+            firestoreLimit(limitCount)
+        )
+        : query(
+            collection(db, 'inventory_movements'),
+            where('branchId', '==', branchId),
+            orderBy('createdAt', 'desc'),
+            firestoreLimit(limitCount)
+        );
 
     return onSnapshot(q, (snapshot) => {
         const movements: InventoryMovement[] = [];
         snapshot.forEach((doc) => {
             movements.push({ ...(doc.data() as Omit<InventoryMovement, 'id'>), id: doc.id });
         });
-        // Ordenar por fecha descendente
-        movements.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        callback(movements.slice(0, limit));
+        // Sorting is handled by Firestore now
+        callback(movements);
     });
 };
 
@@ -332,7 +343,7 @@ export const initializeProductInventory = async (
  * Registra la venta y descuenta inventario en una sola transacción atómica.
  * Si algo falla (ej: sin stock), todo se revierte.
  */
-import { runTransaction } from './firebase'; // Ensure this is exported in firebase.ts
+// runTransaction is already imported at the top
 
 /**
  * Add New Stock Batch (Inbox)

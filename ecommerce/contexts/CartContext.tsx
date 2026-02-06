@@ -2,15 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db, doc, onSnapshot } from '../lib/firebase';
 import { toast } from 'sonner';
-
-export interface CartItem {
-    id: string; // Product ID
-    name: string;
-    price: number;
-    image: string;
-    quantity: number;
-    maxStock: number; // For validation
-}
+import { CartItem } from '../lib/types';
 
 interface CartContextType {
     cart: CartItem[];
@@ -79,7 +71,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 toast.error('Producto agotado');
                 return prev;
             }
-            return [...prev, { ...product, quantity: 1, maxStock: product.stock }];
+            return [...prev, { ...product, quantity: 1 }];
         });
         toast.success('Agregado al carrito');
     };

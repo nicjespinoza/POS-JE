@@ -19,7 +19,7 @@ export default function AdminPage() {
         } else if (!loading && userProfile) {
             const role = userProfile.role;
             // Loose comparison just in case of enum issues
-            if (role !== Role.ADMIN && role !== Role.MANAGER && role !== 'ADMIN' && role !== 'MANAGER') {
+            if (role !== Role.ADMIN && role !== Role.MANAGER && (role as string) !== 'ADMIN' && (role as string) !== 'MANAGER') {
                 console.log("Redirecting to Home (Insufficient Role):", role);
                 router.push('/');
             }

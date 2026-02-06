@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, Timestamp, runTransaction, increment, limit, orderBy } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, Timestamp, runTransaction, increment, limit, orderBy, addDoc, deleteDoc } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
     apiKey: "AIzaSyAWQS6K0KX5v4VcCMkc8wYMcDCy620g5a0",
@@ -35,7 +35,13 @@ export {
     onAuthStateChanged,
     runTransaction,
     createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
     increment,
     limit,
-    orderBy
+    orderBy,
+    addDoc,
+    deleteDoc,
+    ref,
+    uploadBytes,
+    getDownloadURL
 };

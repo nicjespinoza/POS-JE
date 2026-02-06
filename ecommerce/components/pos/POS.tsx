@@ -7,17 +7,14 @@ import {
     ArrowUp, ArrowDown, Columns, Box, Calculator as CalcIcon, DollarSign, TrendingUp // Added missing icons
 } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
-import { useAuth } from '../../providers/AuthProvider';
+import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../providers/DataProvider';
-import { Product, Transaction, TransactionType, Role } from '../../lib/types'; // Updated Types Import
+import { Product, Transaction, TransactionType, Role, CartItem } from '../../lib/types'; // Updated Types Import
 import { processAtomicSale } from '../../services/inventoryService'; // Updated Import
 import { doc, getDoc } from 'firebase/firestore'; // Check if needed, maybe for specific actions
 import { db } from '../../lib/firebase';
 
 // Types for POS Component
-interface CartItem extends Product {
-    quantity: number;
-}
 
 interface LayoutConfig {
     columns: number;
@@ -108,6 +105,12 @@ export const POS: React.FC = () => {
         });
     }, [products, search, selectedCategory]);
 
+    // Derive categories from products
+    const productCategories = useMemo(() => {
+        const cats = new Set(products.map(p => p.category));
+        return Array.from(cats);
+    }, [products]);
+
     // Cart Logic
     const addToCart = (product: Product) => {
         setCart(prev => {
@@ -161,15 +164,8 @@ export const POS: React.FC = () => {
                 paymentMethod: paymentMethod,
                 status: 'COMPLETED',
                 branchId: userProfile?.branchId || 'main',
-                userId: userProfile?.id || 'unknown',
-                items: cart.map(i => ({
-                    productId: i.id,
-                    productName: i.name,
-                    quantity: i.quantity,
-                    price: i.price,
-                    cost: 0, // Backend/Service adds this via FIFO
-                    branchId: userProfile?.branchId || 'main'
-                }))
+                userId: userProfile?.uid || 'unknown',
+                items: cart
             };
 
             await addTransaction(transaction); // data provider handles Atomic sale
@@ -260,7 +256,7 @@ export const POS: React.FC = () => {
                             >
                                 Todos
                             </button>
-                            {categories.map(cat => (
+                            {productCategories.map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setSelectedCategory(cat)}

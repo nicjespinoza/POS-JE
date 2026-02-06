@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { auth, db, doc, getDoc, onAuthStateChanged } from '../lib/firebase';
+import { auth, db, doc, getDoc, setDoc, onAuthStateChanged } from '../lib/firebase';
 import { User } from 'firebase/auth';
 import { UserProfile, Role } from '../lib/types';
 
@@ -36,25 +36,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             setUser(firebaseUser);
 
-            if (firebaseUser) {
-                // Fetch additional role data from Firestore
+            if (firebaseUser?.email) {
                 try {
-                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        setUserProfile(userDoc.data() as UserProfile);
-                    } else {
-                        // Only for dev/first run: Create a basic profile if not exists
-                        // In production, users should be created by admin
-                        setUserProfile({
-                            uid: firebaseUser.uid,
-                            email: firebaseUser.email || '',
-                            role: Role.GUEST,
-                            displayName: firebaseUser.displayName || 'Usuario',
-                            createdAt: new Date().toISOString()
-                        });
+                    const email = firebaseUser.email.toLowerCase();
+
+                    // --- 1. ACCESS CONTROL CHECK (The "Acceso" Logic) ---
+                    // We check a special collection 'access_users' which is the Source of Truth
+                    const accessRef = doc(db, 'access_users', email);
+                    let accessDoc = await getDoc(accessRef);
+
+                    // --- 2. AUTO-SEEDING (DEV ONLY) --- 
+                    // To ensure the system works immediately for the user request
+                    if (!accessDoc.exists() && process.env.NODE_ENV === 'development') {
+                        console.log("AuthProvider: Seeding Access Control for", email);
+                        let seedRole = 'GUEST';
+                        let seedBranch = '';
+
+                        if (email === 'admin@webdesignje.com') { seedRole = 'ADMIN'; }
+                        else if (email === 'suc1@webdesignje.com') { seedRole = 'SUC1'; seedBranch = 'suc1'; }
+                        else if (email === 'suc2@webdesignje.com') { seedRole = 'SUC2'; seedBranch = 'suc2'; }
+                        else if (email === 'suc3@webdesignje.com') { seedRole = 'SUC3'; seedBranch = 'suc3'; }
+
+                        if (seedRole !== 'GUEST') {
+                            try {
+                                await setDoc(accessRef, {
+                                    email: email,
+                                    role: seedRole,
+                                    branchId: seedBranch,
+                                    authorized: true
+                                });
+                                accessDoc = await getDoc(accessRef); // Refresh
+                            } catch (e) {
+                                console.error("Seed failed (likely rules):", e);
+                            }
+                        }
                     }
+
+                    // --- 3. DETERMINE EFFECTIVE ROLE ---
+                    let assignedRole = Role.GUEST;
+                    let assignedBranch = '';
+
+                    if (accessDoc.exists()) {
+                        const accessData = accessDoc.data();
+                        console.log("AuthProvider: Access Rule Found:", accessData);
+
+                        // Map Custom Roles to System Roles
+                        if (accessData.role === 'ADMIN') assignedRole = Role.ADMIN;
+                        else if (accessData.role === 'SUC1') { assignedRole = Role.MANAGER; assignedBranch = 'suc-1'; }
+                        else if (accessData.role === 'SUC2') { assignedRole = Role.MANAGER; assignedBranch = 'suc-2'; }
+                        else if (accessData.role === 'SUC3') { assignedRole = Role.MANAGER; assignedBranch = 'suc-3'; }
+                        else if (accessData.role === 'CASHIER') assignedRole = Role.CASHIER;
+                    }
+
+                    // --- 4. SYNC TO USER PROFILE (Session State) ---
+                    const userRef = doc(db, 'users', firebaseUser.uid);
+                    const userDoc = await getDoc(userRef);
+
+                    const profileData: UserProfile = {
+                        uid: firebaseUser.uid,
+                        email: email,
+                        displayName: firebaseUser.displayName || 'Usuario',
+                        role: assignedRole,
+                        branchId: assignedBranch || userDoc.data()?.branchId, // Prefer assigned, fallback to existing
+                        photoURL: firebaseUser.photoURL || undefined
+                    };
+
+                    // Only update DB if changed to avoid unnecessary writes
+                    if (!userDoc.exists() || userDoc.data()?.role !== assignedRole) {
+                        console.log("AuthProvider: Syncing Profile to Firestore", profileData);
+                        try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { }
+                    }
+
+                    setUserProfile(profileData);
+
                 } catch (error) {
-                    console.error("Error fetching user profile:", error);
+                    console.error("Error in Auth/Access logic:", error);
                     setUserProfile(null);
                 }
             } else {

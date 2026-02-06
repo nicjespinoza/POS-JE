@@ -37,12 +37,10 @@ service cloud.firestore {
     // Public read for POS (or restricted to authenticated).
     // Write only by Managers/Admins.
     match /products/{productId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if isManager();
     }
 
-    // --- Transactions Collection ---
-    // Enforce Branch Isolation
     // --- Transactions Collection ---
     // Enforce Branch Isolation & Data Integrity
     match /transactions/{transactionId} {
@@ -99,7 +97,7 @@ service cloud.firestore {
 
     // --- Authorized IPs ---
     match /authorized_ips/{id} {
-        allow read: if true;
+        allow read: if isAuthenticated();
         allow write: if isAdmin();
     }
     

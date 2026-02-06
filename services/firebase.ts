@@ -1,16 +1,16 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, Timestamp, runTransaction } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, orderBy, limit, Timestamp, runTransaction } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB1Mvre6TiW6eOK0PTQfNn8iLh7riw2ISk",
-  authDomain: "posoriental-88648.firebaseapp.com",
-  projectId: "posoriental-88648",
-  storageBucket: "posoriental-88648.firebasestorage.app",
-  messagingSenderId: "485487454134",
-  appId: "1:485487454134:web:bc3bf851c588e6d6bec317",
-  measurementId: "G-54E1P0Y5D0"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -34,5 +34,7 @@ export {
   signOut,
   onAuthStateChanged,
   runTransaction,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  orderBy,
+  limit
 };

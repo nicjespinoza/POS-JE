@@ -44,11 +44,11 @@ import {
 import { GlassCard } from '../ui/GlassCard';
 import { FinancialOverview } from './FinancialOverview';
 import { ReportsDashboard } from './ReportsDashboard';
-import { useAuth } from '../../providers/AuthProvider';
+import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../providers/DataProvider';
 import { analyzeBusinessData } from '../../services/geminiService';
 import { ALL_PERMISSIONS } from '../../lib/constants';
-import { Transaction, Product, Role, TransactionType, UserProfile } from '../../lib/types';
+import { Transaction, Product, Role, TransactionType, UserProfile, RoleDefinition, Permission } from '../../lib/types';
 import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
@@ -72,7 +72,7 @@ export const AdminDashboard: React.FC = () => {
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
     // Roles State
-    const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+    const [selectedRole, setSelectedRole] = useState<RoleDefinition | null>(null);
     const [isEditingRole, setIsEditingRole] = useState(false);
     const [tempRoleName, setTempRoleName] = useState('');
     const [tempRoleDesc, setTempRoleDesc] = useState('');
@@ -333,9 +333,10 @@ export const AdminDashboard: React.FC = () => {
 
     const togglePermission = async (permId: string) => {
         if (!selectedRole) return;
-        const newPerms = selectedRole.permissions.includes(permId)
-            ? selectedRole.permissions.filter(p => p !== permId)
-            : [...selectedRole.permissions, permId];
+        const permission = permId as Permission;
+        const newPerms = selectedRole.permissions.includes(permission)
+            ? selectedRole.permissions.filter(p => p !== permission)
+            : [...selectedRole.permissions, permission];
 
         await updateDoc(doc(db, 'roles', selectedRole.id), { permissions: newPerms });
         setSelectedRole({ ...selectedRole, permissions: newPerms });

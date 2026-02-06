@@ -15,6 +15,12 @@ import { StockTransfer, MovementType, InventoryMovement, InventoryBatch } from '
  * - Deducts stock from Origin (Move to "Transit").
  * - Creates Transfer Document.
  */
+/**
+ * Initiate Stock Transfer (Sender)
+ * - Validates stock availability in Origin.
+ * - Deducts stock from Origin (Move to "Transit").
+ * - Creates Transfer Document with FIFO cost data.
+ */
 export const createStockTransfer = async (
     originBranchId: string,
     targetBranchId: string,
@@ -25,32 +31,11 @@ export const createStockTransfer = async (
     const transferId = crypto.randomUUID();
     const date = new Date().toISOString();
 
-    const transferData: StockTransfer = {
-        id: transferId,
-        originBranchId,
-        targetBranchId,
-        status: 'PENDING',
-        items,
-        sentBy: userId,
-        sentAt: date,
-        note
-    };
-
     await runTransaction(db, async (transaction) => {
-        // 1. Validate & Deduct from Origin (FIFO Logic simplified for Transfer)
-        // Ideally we should use the same FIFO logic as Sales to "pick" the batches being moved.
-        // For simplicity in this phase, we will just decrement aggregate stock 
-        // AND decrement from batches FIFO style but without marking them "Sold".
-        // Instead we might need to "Move" batches? 
-        // Complexity Alert: Moving batches is hard because cost must be preserved.
-        // Strategy: We will "Consume" from Origin Batches and create "Transit" Batches?
-        // OR simpler: Just decrement stock and let Receiver create NEW batches upon receipt with average cost?
-        // BEST PATH: "Consume" from Origin (Salida de Traslado) and carry the Cost Average to the Transfer Doc.
-
-        let totalTransferValue = 0; // For tracking value
+        const transferItems: StockTransferItem[] = [];
 
         for (const item of items) {
-            // A. Check Aggregate Stock
+            // A. Check Aggregate Stock (Fail fast)
             const inventoryId = `${item.productId}_${originBranchId}`;
             const inventoryRef = doc(db, 'inventory', inventoryId);
             const invSnap = await transaction.get(inventoryRef);
@@ -59,23 +44,77 @@ export const createStockTransfer = async (
                 throw new Error(`Stock insuficiente en origen para: ${item.productName}`);
             }
 
-            // B. FIFO Consumption (To determine cost being transferred)
-            // NOTE: We need to Query Batches. Standard Locking issue applies.
-            // We'll trust the User/UI calling this has checked, or fail if optimistic lock fails.
-            // We can't query inside transaction easily without index. 
-            // We will use the simplified approach: Just use Average Cost or Current Cost if we can't do full FIFO here easily.
-            // BUT wait, we just did FIFO in sales. We should reuse or replicate.
-            // Let's replicate strict FIFO for correctness.
+            // B. FIFO Selection
+            // 1. Fetch Candidates (Optimistic Read)
+            // Note: In a high-concurrency environment, this query should ideally be part of the transaction,
+            // but strict Client SDK doesn't support query in transaction easily without admin privileges or knowing IDs.
+            // We use the pattern: Query -> Transaction.get(lock) -> Verify.
+            const q = query(
+                collection(db, 'inventory_batches'),
+                where('productId', '==', item.productId),
+                where('branchId', '==', originBranchId),
+                where('remainingStock', '>', 0)
+            );
 
-            // Fetch Batches (Must be done before writes, but inside transaction is tricky for queries).
-            // We will assume simpler logic for Transfer Phase 1: 
-            // Just decrement aggregate. We will handle Batch "Movement" in Phase 5 or Advanced.
-            // RISK: COGS calculation for "Sale" at Destination Branch will be lost if we don't move cost.
-            // FIX: We MUST move cost.
+            // We must execute this query OUTSIDE the transaction loop ideally, but inside runTransaction callback limits capability?
+            // Actually, we can await getDocs inside runTransaction, but it won't be "locked" until we get() specific docs.
+            const batchQuerySnap = await getDocs(q);
 
-            // For this implementation, let's assume valid stock and just update aggregate for now to unblock.
-            // TODO: Implement Full FIFO Batch Transfer.
+            // Sort by Date (FIFO)
+            const candidates = batchQuerySnap.docs
+                .map(d => ({ ...d.data(), id: d.id } as InventoryBatch))
+                .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
+            let quantityToFulfill = item.quantity;
+            let totalCost = 0;
+            const sourceBatches: StockTransferItem['sourceBatches'] = [];
+
+            for (const batch of candidates) {
+                if (quantityToFulfill <= 0) break;
+
+                // Lock & Re-read Batch
+                const batchRef = doc(db, 'inventory_batches', batch.id);
+                const batchSnap = await transaction.get(batchRef);
+
+                if (!batchSnap.exists()) continue;
+                const currentBatch = batchSnap.data() as InventoryBatch;
+
+                if (currentBatch.remainingStock <= 0) continue;
+
+                const take = Math.min(currentBatch.remainingStock, quantityToFulfill);
+
+                // Track for Transfer Doc
+                sourceBatches.push({
+                    originalBatchId: batch.id,
+                    cost: currentBatch.cost,
+                    quantity: take
+                });
+                totalCost += (take * currentBatch.cost);
+
+                // Update Batch Source (Reduce Stock)
+                transaction.update(batchRef, {
+                    remainingStock: currentBatch.remainingStock - take
+                });
+
+                quantityToFulfill -= take;
+            }
+
+            if (quantityToFulfill > 0) {
+                // Should have been caught by aggregate check, but safeguard
+                throw new Error(`Inconsistencia de lotes: No se encontraron suficientes lotes para ${item.productName}`);
+            }
+
+            const unitCost = totalCost / item.quantity;
+
+            transferItems.push({
+                productId: item.productId,
+                productName: item.productName,
+                quantity: item.quantity,
+                sourceBatches,
+                unitCost
+            });
+
+            // Update Aggregate Inventory
             const currentStock = invSnap.data().stock;
             transaction.update(inventoryRef, {
                 stock: currentStock - item.quantity,
@@ -90,7 +129,7 @@ export const createStockTransfer = async (
                 productName: item.productName,
                 branchId: originBranchId,
                 branchName: 'Sucursal ' + originBranchId,
-                type: MovementType.SALIDA, // Salida por Traslado
+                type: MovementType.SALIDA,
                 quantity: -item.quantity,
                 previousStock: currentStock,
                 newStock: currentStock - item.quantity,
@@ -102,6 +141,16 @@ export const createStockTransfer = async (
         }
 
         // 2. Create Transfer Doc
+        const transferData: StockTransfer = {
+            id: transferId,
+            originBranchId,
+            targetBranchId,
+            status: 'PENDING',
+            items: transferItems, // Contains cost info
+            sentBy: userId,
+            sentAt: date,
+            note
+        };
         transaction.set(doc(db, 'stock_transfers', transferId), transferData);
     });
 };
@@ -110,7 +159,7 @@ export const createStockTransfer = async (
  * Complete Stock Transfer (Receiver)
  * - Verifies Transfer is PENDING.
  * - Adds stock to Target.
- * - Creates Incoming Batches (Lotes) with preserved cost (or estimated).
+ * - Creates Incoming Batches (Lotes) with preserved cost.
  * - Updates Transfer Status.
  */
 export const completeStockTransfer = async (
@@ -151,14 +200,22 @@ export const completeStockTransfer = async (
             }
 
             // 2. Create "Incoming" Batch
-            // Since we didn't track exact cost from sender (TODO), we use a placeholder or lookup product cost.
-            // We'll create a new batch so FIFO works at the new branch.
+            // Use preserved unitCost from transfer item, or sourceBatches weighted average if unitCost missing
+            let cost = 0;
+            if (item.unitCost !== undefined) {
+                cost = item.unitCost;
+            } else if (item.sourceBatches && item.sourceBatches.length > 0) {
+                const totalValue = item.sourceBatches.reduce((acc, b) => acc + (b.cost * b.quantity), 0);
+                const totalQty = item.sourceBatches.reduce((acc, b) => acc + b.quantity, 0);
+                cost = totalQty > 0 ? totalValue / totalQty : 0;
+            }
+
             const batchId = crypto.randomUUID();
             const batch: InventoryBatch = {
                 id: batchId,
                 productId: item.productId,
                 branchId: transfer.targetBranchId,
-                cost: 0, // NEEDS FIX: Transferred Cost. Setting 0 triggers warnings.
+                cost: cost,
                 initialStock: item.quantity,
                 remainingStock: item.quantity,
                 createdAt: new Date().toISOString(),
@@ -173,8 +230,8 @@ export const completeStockTransfer = async (
                 productId: item.productId,
                 productName: item.productName,
                 branchId: transfer.targetBranchId,
-                branchName: 'Sucursal ' + transfer.targetBranchId,
-                type: MovementType.ENTRADA, // Entrada por Traslado
+                branchName: 'Sucursal ' + transfer.targetBranchId, // Helper needed for name? Using ID for now if name unavailable
+                type: MovementType.ENTRADA,
                 quantity: item.quantity,
                 previousStock: currentStock,
                 newStock: currentStock + item.quantity,
