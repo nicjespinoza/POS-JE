@@ -63,8 +63,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     useEffect(() => {
+        if (!userProfile) {
+            setProducts([]);
+            return;
+        }
         loadProducts();
-    }, [loadProducts]);
+    }, [userProfile, loadProducts]);
 
     const refreshProducts = useCallback(async () => {
         await loadProducts();

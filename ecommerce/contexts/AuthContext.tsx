@@ -39,16 +39,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (firebaseUser?.email) {
                 try {
                     const email = firebaseUser.email.toLowerCase();
+                    const userRef = doc(db, 'users', firebaseUser.uid);
 
-                    // --- 1. ACCESS CONTROL CHECK (The "Acceso" Logic) ---
-                    // We check a special collection 'access_users' which is the Source of Truth
+                    // --- STEP 0: BOOTSTRAP users/{uid} if it doesn't exist ---
+                    // This MUST happen first because Firestore rules use users/{uid}
+                    // to determine role. Without it, all other reads fail.
+                    // The users rule allows create if request.auth.uid == userId.
+                    let userDoc = await getDoc(userRef);
+                    if (!userDoc.exists()) {
+                        // Determine bootstrap role from email (hardcoded known admins)
+                        let bootstrapRole = 'GUEST';
+                        let bootstrapBranch: string | null = null;
+                        if (email === 'admin@webdesignje.com') { bootstrapRole = 'ADMIN'; }
+                        else if (email === 'suc1@webdesignje.com') { bootstrapRole = 'MANAGER'; bootstrapBranch = 'suc-1'; }
+                        else if (email === 'suc2@webdesignje.com') { bootstrapRole = 'MANAGER'; bootstrapBranch = 'suc-2'; }
+                        else if (email === 'suc3@webdesignje.com') { bootstrapRole = 'MANAGER'; bootstrapBranch = 'suc-3'; }
+
+                        await setDoc(userRef, {
+                            uid: firebaseUser.uid,
+                            email: email,
+                            displayName: firebaseUser.displayName || 'Usuario',
+                            role: bootstrapRole,
+                            branchId: bootstrapBranch,
+                            photoURL: firebaseUser.photoURL || null
+                        });
+                        userDoc = await getDoc(userRef);
+                    }
+
+                    // --- STEP 1: ACCESS CONTROL CHECK ---
                     const accessRef = doc(db, 'access_users', email);
-                    let accessDoc = await getDoc(accessRef);
+                    let accessDoc;
+                    try {
+                        accessDoc = await getDoc(accessRef);
+                    } catch {
+                        accessDoc = null;
+                    }
 
-                    // --- 2. AUTO-SEEDING (DEV ONLY) --- 
-                    // To ensure the system works immediately for the user request
-                    if (!accessDoc.exists() && process.env.NODE_ENV === 'development') {
-                        // DEV: Seeding access control
+                    // --- STEP 2: AUTO-SEEDING (DEV ONLY) --- 
+                    if ((!accessDoc || !accessDoc.exists()) && process.env.NODE_ENV === 'development') {
                         let seedRole = 'GUEST';
                         let seedBranch = '';
 
@@ -65,52 +93,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                     branchId: seedBranch,
                                     authorized: true
                                 });
-                                accessDoc = await getDoc(accessRef); // Refresh
+                                accessDoc = await getDoc(accessRef);
                             } catch (e) {
                                 console.error("Seed failed (likely rules):", e);
                             }
                         }
                     }
 
-                    // --- 3. DETERMINE EFFECTIVE ROLE ---
+                    // --- STEP 3: DETERMINE EFFECTIVE ROLE ---
                     let assignedRole = Role.GUEST;
                     let assignedBranch = '';
 
-                    if (accessDoc.exists()) {
+                    if (accessDoc && accessDoc.exists()) {
                         const accessData = accessDoc.data();
-                        // Access rule found
-
-                        // Map Custom Roles to System Roles
                         if (accessData.role === 'ADMIN') assignedRole = Role.ADMIN;
                         else if (accessData.role === 'SUC1') { assignedRole = Role.MANAGER; assignedBranch = 'suc-1'; }
                         else if (accessData.role === 'SUC2') { assignedRole = Role.MANAGER; assignedBranch = 'suc-2'; }
                         else if (accessData.role === 'SUC3') { assignedRole = Role.MANAGER; assignedBranch = 'suc-3'; }
                         else if (accessData.role === 'CASHIER') assignedRole = Role.CASHIER;
+                    } else {
+                        // Fallback: use role from users doc if access_users not available
+                        const existingRole = userDoc.data()?.role;
+                        if (existingRole === 'ADMIN') assignedRole = Role.ADMIN;
+                        else if (existingRole === 'MANAGER') assignedRole = Role.MANAGER;
+                        else if (existingRole === 'CASHIER') assignedRole = Role.CASHIER;
+                        assignedBranch = userDoc.data()?.branchId || '';
                     }
 
-                    // --- 4. SYNC TO USER PROFILE (Session State) ---
-                    const userRef = doc(db, 'users', firebaseUser.uid);
-                    const userDoc = await getDoc(userRef);
-
+                    // --- STEP 4: SYNC TO USER PROFILE ---
                     const profileData: UserProfile = {
                         uid: firebaseUser.uid,
                         email: email,
                         displayName: firebaseUser.displayName || 'Usuario',
                         role: assignedRole,
-                        branchId: assignedBranch || userDoc.data()?.branchId || null, // Use null instead of undefined
+                        branchId: assignedBranch || userDoc.data()?.branchId || null,
                         photoURL: firebaseUser.photoURL || null
                     };
 
-                    // Only update DB if changed to avoid unnecessary writes
-                    if (!userDoc.exists() || userDoc.data()?.role !== assignedRole) {
-                        // Syncing profile
+                    // Only update DB if role changed
+                    if (userDoc.data()?.role !== assignedRole) {
                         try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { console.error("Error syncing profile:", e); }
                     }
 
                     setUserProfile(profileData);
 
                 } catch (error) {
-                    console.error("Auth error");
+                    console.error("Auth error:", error);
                     setUserProfile(null);
                 }
             } else {
