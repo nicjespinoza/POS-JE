@@ -38,6 +38,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (firebaseUser?.email) {
                 try {
+                    // Force the auth token to be fresh so Firestore SDK recognises
+                    // the user as authenticated before any reads/writes.
+                    await firebaseUser.getIdToken(true);
+
                     const email = firebaseUser.email.toLowerCase();
                     const userRef = doc(db, 'users', firebaseUser.uid);
 

@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { Package, Gift, LogOut, User as UserIcon } from 'lucide-react';
 
 export default function DashboardPage() {
-    const { user, loading, logout } = useAuth();
+    const { user, userProfile, loading, logout } = useAuth();
     const router = useRouter();
     const [orders, setOrders] = useState<any[]>([]);
     const [royaltyPoints, setRoyaltyPoints] = useState(0);
@@ -18,16 +18,16 @@ export default function DashboardPage() {
         }
     }, [user, loading, router]);
 
-    // Fetch User Data & Orders
+    // Fetch User Data & Orders — gate on userProfile to ensure auth token is ready
     useEffect(() => {
-        if (!user) return;
+        if (!user || !userProfile) return;
 
         // 1. Get Loyalty Points from 'users' collection
         const unsubUser = onSnapshot(doc(db, 'users', user.uid), (doc) => {
             if (doc.exists()) {
                 setRoyaltyPoints(doc.data().royaltyPoints || 0);
             }
-        });
+        }, (err) => console.warn('Dashboard user listener:', err.message));
 
         // 2. Get Orders
         const q = query(
@@ -42,13 +42,13 @@ export default function DashboardPage() {
                 items.push({ id: doc.id, ...doc.data() });
             });
             setOrders(items);
-        });
+        }, (err) => console.warn('Dashboard orders listener:', err.message));
 
         return () => {
             unsubUser();
             unsubOrders();
         };
-    }, [user]);
+    }, [user, userProfile]);
 
     if (loading || !user) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Cargando...</div>;
 
