@@ -161,6 +161,10 @@ export default function SetupDbPage() {
 
     const initializeDB = async () => {
         if (!user) { setStatus('Debes iniciar sesion primero.'); return; }
+        if (user.email !== 'admin@webdesignje.com') {
+            setStatus('ERROR: Solo admin@webdesignje.com puede inicializar la base de datos.');
+            return;
+        }
         setLoading(true);
         setStatus('Iniciando configuracion...');
 

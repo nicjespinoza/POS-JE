@@ -179,7 +179,8 @@ export const addStock = async (
 };
 
 /**
- * Transferir stock entre sucursales
+ * Transferir stock entre sucursales (ATOMIC)
+ * Uses Firestore transaction to prevent inconsistencies on partial failure
  */
 export const transferStock = async (
     productId: string,
@@ -189,53 +190,68 @@ export const transferStock = async (
     toBranchId: string,
     toBranchName: string,
     quantity: number,
-    fromCurrentStock: number,
-    toCurrentStock: number,
+    _fromCurrentStock: number,
+    _toCurrentStock: number,
     userId: string,
     userName: string
 ): Promise<void> => {
-    // Verificar que hay suficiente stock
-    if (fromCurrentStock < quantity) {
-        throw new Error('Stock insuficiente para transferir');
-    }
+    await runTransaction(db, async (transaction) => {
+        const fromInvId = `${productId}_${fromBranchId}`;
+        const toInvId = `${productId}_${toBranchId}`;
 
-    const newFromStock = fromCurrentStock - quantity;
-    const newToStock = toCurrentStock + quantity;
+        const fromRef = doc(db, 'inventory', fromInvId);
+        const toRef = doc(db, 'inventory', toInvId);
 
-    // Actualizar ambas sucursales
-    await updateBranchStock(productId, fromBranchId, newFromStock);
-    await updateBranchStock(productId, toBranchId, newToStock);
+        // Read both within transaction (locks)
+        const fromSnap = await transaction.get(fromRef);
+        const toSnap = await transaction.get(toRef);
 
-    // Registrar movimiento de salida
-    await recordInventoryMovement({
-        productId,
-        productName,
-        branchId: fromBranchId,
-        branchName: fromBranchName,
-        type: MovementType.TRANSFERENCIA,
-        quantity: -quantity,
-        previousStock: fromCurrentStock,
-        newStock: newFromStock,
-        reason: `Transferencia a ${toBranchName}`,
-        transferToBranchId: toBranchId,
-        userId,
-        userName
-    });
+        if (!fromSnap.exists()) throw new Error('Inventario origen no existe');
 
-    // Registrar movimiento de entrada
-    await recordInventoryMovement({
-        productId,
-        productName,
-        branchId: toBranchId,
-        branchName: toBranchName,
-        type: MovementType.TRANSFERENCIA,
-        quantity: quantity,
-        previousStock: toCurrentStock,
-        newStock: newToStock,
-        reason: `Transferencia desde ${fromBranchName}`,
-        transferToBranchId: fromBranchId,
-        userId,
-        userName
+        const fromStock = fromSnap.data().stock || 0;
+        const toStock = toSnap.exists() ? (toSnap.data().stock || 0) : 0;
+
+        if (fromStock < quantity) throw new Error('Stock insuficiente para transferir');
+
+        const newFromStock = fromStock - quantity;
+        const newToStock = toStock + quantity;
+        const now = new Date().toISOString();
+
+        // Atomic writes
+        transaction.update(fromRef, { stock: newFromStock, updatedAt: now });
+
+        if (toSnap.exists()) {
+            transaction.update(toRef, { stock: newToStock, updatedAt: now });
+        } else {
+            transaction.set(toRef, {
+                productId, branchId: toBranchId,
+                stock: quantity, lowStockThreshold: 5, updatedAt: now
+            });
+        }
+
+        // Movement logs (within same transaction)
+        const movOutId = crypto.randomUUID();
+        const movInId = crypto.randomUUID();
+
+        transaction.set(doc(db, 'inventory_movements', movOutId), {
+            id: movOutId, productId, productName,
+            branchId: fromBranchId, branchName: fromBranchName,
+            type: MovementType.TRANSFERENCIA, quantity: -quantity,
+            previousStock: fromStock, newStock: newFromStock,
+            reason: `Transferencia a ${toBranchName}`,
+            transferToBranchId: toBranchId,
+            userId, userName, createdAt: now
+        } as InventoryMovement);
+
+        transaction.set(doc(db, 'inventory_movements', movInId), {
+            id: movInId, productId, productName,
+            branchId: toBranchId, branchName: toBranchName,
+            type: MovementType.TRANSFERENCIA, quantity: quantity,
+            previousStock: toStock, newStock: newToStock,
+            reason: `Transferencia desde ${fromBranchName}`,
+            transferToBranchId: fromBranchId,
+            userId, userName, createdAt: now
+        } as InventoryMovement);
     });
 };
 

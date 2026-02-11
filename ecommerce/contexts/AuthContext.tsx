@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // --- 2. AUTO-SEEDING (DEV ONLY) --- 
                     // To ensure the system works immediately for the user request
                     if (!accessDoc.exists() && process.env.NODE_ENV === 'development') {
-                        console.log("AuthProvider: Seeding Access Control for", email);
+                        // DEV: Seeding access control
                         let seedRole = 'GUEST';
                         let seedBranch = '';
 
@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     if (accessDoc.exists()) {
                         const accessData = accessDoc.data();
-                        console.log("AuthProvider: Access Rule Found:", accessData);
+                        // Access rule found
 
                         // Map Custom Roles to System Roles
                         if (accessData.role === 'ADMIN') assignedRole = Role.ADMIN;
@@ -103,14 +103,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     // Only update DB if changed to avoid unnecessary writes
                     if (!userDoc.exists() || userDoc.data()?.role !== assignedRole) {
-                        console.log("AuthProvider: Syncing Profile to Firestore", profileData);
+                        // Syncing profile
                         try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { console.error("Error syncing profile:", e); }
                     }
 
                     setUserProfile(profileData);
 
                 } catch (error) {
-                    console.error("Error in Auth/Access logic:", error);
+                    console.error("Auth error");
                     setUserProfile(null);
                 }
             } else {

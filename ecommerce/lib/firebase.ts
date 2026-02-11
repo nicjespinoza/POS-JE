@@ -4,14 +4,19 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
-    apiKey: "AIzaSyAWQS6K0KX5v4VcCMkc8wYMcDCy620g5a0",
-    authDomain: "pos-zapatos.firebaseapp.com",
-    projectId: "pos-zapatos",
-    storageBucket: "pos-zapatos.firebasestorage.app",
-    messagingSenderId: "717323415083",
-    appId: "1:717323415083:web:12e41d5fd205ba2301c46e",
-    measurementId: "G-DQTWFD2B83"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
+    measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || '',
 };
+
+// Validate required config at startup
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    console.error('[SECURITY] Missing Firebase config. Set NEXT_PUBLIC_FIREBASE_* vars in .env.local');
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);

@@ -105,13 +105,13 @@ export default function StaffPortalScreen() {
             // since I don't see 'login' explicitly in previous context dumps (only logout, user, etc).
             // Actually, let's use the direct import to be sure.
             // Verify inputs
-            console.log(`Attempting login for: ${email} with password length: ${pass?.length}`);
+            // Login attempt
 
             const { signInWithEmailAndPassword } = await import('firebase/auth');
             const { auth } = await import('../../lib/firebase');
 
             await signInWithEmailAndPassword(auth, email, pass);
-            console.log("Login successful");
+            // Login successful
 
             // Redirect based on selected role / branch Logic
             // In a real app we would verify user claims match the selected button.
@@ -122,8 +122,7 @@ export default function StaffPortalScreen() {
                 router.push('/pos');
             }
         } catch (err: any) {
-            console.error("Login Error Full Object:", err);
-            console.error("Login Error Code:", err.code);
+            // Login failed
 
             if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
                 setLoginError('Correo o contraseña incorrectos.');

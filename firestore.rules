@@ -60,13 +60,26 @@ service cloud.firestore {
     // ============================================================
     
     // --- Users Collection ---
+    // SECURITY: Users CANNOT change their own role or branchId
     match /users/{userId} {
       allow read: if isAuthenticated() && 
         (request.auth.uid == userId || isManager());
+      
+      // CREATE: User can only create their own profile
       allow create: if isAuthenticated() && 
         request.auth.uid == userId;
-      allow update: if isAuthenticated() && 
-        (request.auth.uid == userId || isAdmin());
+      
+      // UPDATE: Self-update CANNOT change role or branchId (anti-escalation)
+      // Only ADMIN can change role/branchId
+      allow update: if isAuthenticated() && (
+        (
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.branchId == resource.data.branchId
+        ) || 
+        isAdmin()
+      );
+      
       allow delete: if isAdmin();
     }
 
@@ -169,14 +182,21 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
-    // --- Inventory Movements (Audit Trail) ---
+    // --- Inventory Movements (Audit Trail / Kardex) ---
     match /inventory_movements/{movementId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
         resource.data.branchId == getUserBranchId()
       );
-      // Only system/processAtomicSale can create - managed by Cloud Functions
-      allow create: if false;
+      // Cashier+ can create movements for their own branch
+      // Must include required fields and userId must match auth
+      allow create: if isCashier() && (
+        isAdmin() || 
+        request.resource.data.branchId == getUserBranchId()
+      ) && request.resource.data.keys().hasAll(['productId', 'branchId', 'type', 'quantity', 'userId']) &&
+        request.resource.data.userId == request.auth.uid;
+      
+      // Movements are immutable once created (audit integrity)
       allow update, delete: if false;
     }
     
@@ -197,6 +217,39 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
+    // --- Inventory Batches (FIFO Cost Tracking) ---
+    match /inventory_batches/{batchId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.branchId == getUserBranchId()
+      );
+      // Manager+ can create/update batches for their branch
+      allow create: if isManager() && (
+        isAdmin() || 
+        request.resource.data.branchId == getUserBranchId()
+      ) && request.resource.data.keys().hasAll(['productId', 'branchId', 'cost', 'initialStock', 'remainingStock']);
+      
+      allow update: if isCashier() && (
+        isAdmin() || 
+        resource.data.branchId == getUserBranchId()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // --- Journal Entries (Accounting) ---
+    match /journal_entries/{entryId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.branchId == getUserBranchId()
+      );
+      // Created during atomic sale transactions by Cashier+
+      allow create: if isCashier() && 
+        request.resource.data.keys().hasAll(['date', 'description', 'lines', 'totalAmount', 'branchId', 'createdBy']) &&
+        request.resource.data.createdBy == request.auth.uid;
+      // Only admin can modify posted entries
+      allow update, delete: if isAdmin();
+    }
+
     // --- Audit Logs ---
     match /audit_logs/{logId} {
       allow read: if isAuthenticated() && (

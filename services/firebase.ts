@@ -7,14 +7,19 @@ import { getStorage } from 'firebase/storage';
 // import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAWQS6K0KX5v4VcCMkc8wYMcDCy620g5a0",
-  authDomain: "pos-zapatos.firebaseapp.com",
-  projectId: "pos-zapatos",
-  storageBucket: "pos-zapatos.firebasestorage.app",
-  messagingSenderId: "717323415083",
-  appId: "1:717323415083:web:12e41d5fd205ba2301c46e",
-  measurementId: "G-DQTWFD2B83"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
+
+// Validate required config at startup
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  console.error('[SECURITY] Missing Firebase config. Set VITE_FIREBASE_* vars in .env.local');
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
