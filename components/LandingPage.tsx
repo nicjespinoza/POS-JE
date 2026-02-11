@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { GlassCard } from './ui/GlassCard';
 import { Role } from '../types';
-import { ArrowRight, BarChart3, Lock, Zap, Sun, Moon, Settings } from 'lucide-react';
+import { ArrowRight, BarChart3, Lock, Zap, Sun, Moon, Settings, User } from 'lucide-react';
 import Setup from './Setup';
 
 interface LandingPageProps {
@@ -11,8 +11,16 @@ interface LandingPageProps {
   isDark: boolean;
 }
 
+const USERS = [
+  { email: 'admin@webdesignje.com', role: Role.ADMIN, label: 'Administrador' },
+  { email: 'suc1@webdesignje.com', role: Role.MANAGER, label: 'Sucursal 1' },
+  { email: 'suc2@webdesignje.com', role: Role.MANAGER, label: 'Sucursal 2' },
+  { email: 'suc3@webdesignje.com', role: Role.MANAGER, label: 'Sucursal 3' },
+];
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, toggleTheme, isDark }) => {
   const [showSetup, setShowSetup] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-black text-slate-900 dark:text-white relative overflow-hidden selection:bg-purple-500/30 transition-colors duration-300">
       {/* Abstract Background Blobs */}
@@ -20,9 +28,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, toggleTheme, 
       <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px]" />
 
       <nav className="relative z-10 p-6 flex justify-between items-center max-w-7xl mx-auto">
-        <div className="text-2xl font-bold tracking-tighter bg-gradient-to-r from-slate-800 to-slate-400 dark:from-gray-100 dark:to-gray-400 bg-clip-text text-transparent">
+        <button 
+          onClick={() => setShowLogin(true)}
+          className="text-2xl font-bold tracking-tighter bg-gradient-to-r from-slate-800 to-slate-400 dark:from-gray-100 dark:to-gray-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity cursor-pointer"
+        >
           Titanium POS
-        </div>
+        </button>
         <div className="flex items-center gap-4">
           <button
             onClick={toggleTheme}
@@ -124,6 +135,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLogin, toggleTheme, 
       </main>
 
       {showSetup && <Setup />}
+
+      {/* Login Modal */}
+      {showLogin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <GlassCard className="w-full max-w-md p-6 bg-white dark:bg-[#1a1a1a]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <User size={20} /> Seleccionar Usuario
+              </h3>
+              <button 
+                onClick={() => setShowLogin(false)}
+                className="text-slate-500 hover:text-slate-700 dark:text-gray-400"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3">
+              {USERS.map((user) => (
+                <button
+                  key={user.email}
+                  onClick={() => {
+                    onLogin(user.role);
+                    setShowLogin(false);
+                  }}
+                  className="w-full p-4 rounded-xl bg-gray-50 dark:bg-white/5 hover:bg-purple-50 dark:hover:bg-purple-500/10 border border-transparent hover:border-purple-200 dark:hover:border-purple-500/30 transition-all text-left"
+                >
+                  <div className="font-medium text-slate-900 dark:text-white">{user.label}</div>
+                  <div className="text-sm text-slate-500 dark:text-gray-400">{user.email}</div>
+                </button>
+              ))}
+            </div>
+            <p className="mt-4 text-xs text-center text-slate-400 dark:text-gray-500">
+              Haz clic en un usuario para iniciar sesión
+            </p>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 };

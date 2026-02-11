@@ -8,7 +8,7 @@ import {
     where,
     serverTimestamp
 } from './firebase';
-import { StockTransfer, MovementType, InventoryMovement, InventoryBatch } from '../types';
+import { StockTransfer, StockTransferItem, MovementType, InventoryMovement, InventoryBatch } from '../types';
 
 /**
  * Initiate Stock Transfer (Sender)
@@ -149,7 +149,7 @@ export const createStockTransfer = async (
             status: 'PENDING',
             items: transferItems, // Contains cost info
             sentBy: userId,
-            sentAt: serverTimestamp() as any, // Use server time
+            sentAt: serverTimestamp()
         };
         transaction.set(doc(db, 'stock_transfers', transferId), transferData);
     });
@@ -187,7 +187,7 @@ export const completeStockTransfer = async (
                 currentStock = invSnap.data().stock;
                 transaction.update(inventoryRef, {
                     stock: currentStock + item.quantity,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: serverTimestamp()
                 });
             } else {
                 transaction.set(inventoryRef, {
@@ -195,7 +195,7 @@ export const completeStockTransfer = async (
                     branchId: transfer.targetBranchId,
                     stock: item.quantity,
                     lowStockThreshold: 5,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: serverTimestamp()
                 });
             }
 
@@ -218,7 +218,7 @@ export const completeStockTransfer = async (
                 cost: cost,
                 initialStock: item.quantity,
                 remainingStock: item.quantity,
-                createdAt: new Date().toISOString(),
+                createdAt: serverTimestamp(),
                 receivedBy: userId
             };
             transaction.set(doc(db, 'inventory_batches', batchId), batch);
@@ -238,7 +238,7 @@ export const completeStockTransfer = async (
                 reason: `Traslado recibido de ${transfer.originBranchId} (Ref: ${transferId})`,
                 transactionId: transferId,
                 userId,
-                createdAt: new Date().toISOString()
+                createdAt: serverTimestamp()
             } as InventoryMovement);
         }
 
@@ -246,7 +246,7 @@ export const completeStockTransfer = async (
         transaction.update(transferRef, {
             status: 'COMPLETED',
             receivedBy: userId,
-            receivedAt: new Date().toISOString()
+            receivedAt: serverTimestamp()
         });
     });
 };
