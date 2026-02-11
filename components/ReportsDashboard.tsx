@@ -116,7 +116,7 @@ export const ReportsDashboard: React.FC = () => {
                     </div>
                     <p className="text-sm text-slate-500 dark:text-gray-400 font-medium">Ventas Totales (Ingresos)</p>
                     <h3 className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
-                        {currencySymbol}{pnl?.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {currencySymbol}{(pnl?.revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
                 </GlassCard>
 
@@ -128,7 +128,7 @@ export const ReportsDashboard: React.FC = () => {
                     </div>
                     <p className="text-sm text-slate-500 dark:text-gray-400 font-medium">Costo de Ventas (FIFO)</p>
                     <h3 className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
-                        -{currencySymbol}{pnl?.cogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        -{currencySymbol}{(pnl?.cogs || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
                     <p className="text-xs text-orange-500 mt-2">Costo real de mercadería vendida</p>
                 </GlassCard>
@@ -141,7 +141,7 @@ export const ReportsDashboard: React.FC = () => {
                     </div>
                     <p className="text-sm text-slate-500 dark:text-gray-400 font-medium">Gastos Operativos</p>
                     <h3 className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
-                        -{currencySymbol}{pnl?.expenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        -{currencySymbol}{(pnl?.expenses || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </h3>
                 </GlassCard>
 
@@ -155,7 +155,7 @@ export const ReportsDashboard: React.FC = () => {
                         </div>
                         <p className="text-sm text-slate-500 dark:text-gray-400 font-medium">Utilidad Neta</p>
                         <h3 className={`text-2xl font-bold mt-1 ${(pnl?.netProfit || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {currencySymbol}{pnl?.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {currencySymbol}{(pnl?.netProfit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </h3>
                         <p className="text-xs text-slate-400 mt-2">
                             Margen: {pnl?.revenue ? ((pnl.netProfit / pnl.revenue) * 100).toFixed(1) : 0}%
@@ -194,22 +194,29 @@ export const ReportsDashboard: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-white/10">
-                                {Object.entries(pnl?.details.revenueByAccount || {}).map(([acc, val]) => (
-                                    <tr key={acc}>
-                                        <td className="px-4 py-3 font-medium text-green-600 dark:text-green-400">{acc}</td>
-                                        <td className="px-4 py-3 text-right">{currencySymbol}{val.toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right">100%</td>
-                                    </tr>
-                                ))}
-                                {Object.entries(pnl?.details.expensesByAccount || {}).map(([acc, val]) => (
-                                    <tr key={acc}>
-                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{acc}</td>
-                                        <td className="px-4 py-3 text-right font-medium">{currencySymbol}{val.toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-right text-slate-400">
-                                            {pnl && pnl.revenue > 0 ? ((val / pnl.revenue) * 100).toFixed(1) : '0.0'}%
-                                        </td>
-                                    </tr>
-                                ))}
+                                {(() => {
+                                    const revenue = pnl?.revenue || 0;
+                                    return (
+                                        <>
+                                            {Object.entries(pnl?.details.revenueByAccount || {}).map(([acc, val]) => (
+                                                <tr key={acc}>
+                                                    <td className="px-4 py-3 font-medium text-green-600 dark:text-green-400">{acc}</td>
+                                                    <td className="px-4 py-3 text-right">{currencySymbol}{val.toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right">100%</td>
+                                                </tr>
+                                            ))}
+                                            {Object.entries(pnl?.details.expensesByAccount || {}).map(([acc, val]) => (
+                                                <tr key={acc}>
+                                                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{acc}</td>
+                                                    <td className="px-4 py-3 text-right font-medium">{currencySymbol}{val.toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-400">
+                                                        {revenue > 0 ? (((val as number) / (revenue as number)) * 100).toFixed(1) : '0.0'}%
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </>
+                                    );
+                                })()}
                             </tbody>
                         </table>
                         {(!pnl?.details.revenueByAccount && !pnl?.details.expensesByAccount) && (
@@ -222,3 +229,5 @@ export const ReportsDashboard: React.FC = () => {
         </div>
     );
 };
+
+export default ReportsDashboard;

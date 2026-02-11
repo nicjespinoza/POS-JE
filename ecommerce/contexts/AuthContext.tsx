@@ -104,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Only update DB if changed to avoid unnecessary writes
                     if (!userDoc.exists() || userDoc.data()?.role !== assignedRole) {
                         console.log("AuthProvider: Syncing Profile to Firestore", profileData);
-                        try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { }
+                        try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { console.error("Error syncing profile:", e); }
                     }
 
                     setUserProfile(profileData);

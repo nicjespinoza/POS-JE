@@ -1,12 +1,12 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { db, doc, onSnapshot } from '../lib/firebase';
 import { toast } from 'sonner';
 import { CartItem } from '../lib/types';
 
 interface CartContextType {
     cart: CartItem[];
-    addToCart: (product: any) => void;
+    addToCart: (product: unknown) => void;
     removeFromCart: (id: string) => void;
     clearCart: () => void;
     total: number;
@@ -18,21 +18,23 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [cart, setCart] = useState<CartItem[]>([]);
 
+    const removeFromCart = useCallback((id: string) => {
+        setCart(prev => prev.filter(item => item.id !== id));
+    }, []);
+
+    const updateQuantity = useCallback((id: string, quantity: number) => {
+        if (quantity <= 0) {
+            removeFromCart(id);
+            return;
+        }
+        setCart(prev => prev.map(p => p.id === id ? { ...p, quantity } : p));
+    }, [removeFromCart]);
+
     // Real-time Stock Validation
     useEffect(() => {
         if (cart.length === 0) return;
 
         const unsubscribes = cart.map((item) => {
-            // Listen to specific product stock changes in 'inventory' or 'stocks' collection
-            // Assuming 'products' contains the master data and stock for now, 
-            // or if using the POS structure: 'products' has stock? 
-            // Plan said: stocks/{branchId}_{productId}. 
-            // For E-commerce, we aggregate or pick a main warehouse branch (e.g., 'suc1' or 'warehouse').
-            // Let's assume 'suc1' is the main for now or check global product doc if simplified.
-            // Based on POS DataContext: products collection had stock directly in simplified mode?
-            // Let's check DataContext.tsx logic again.
-            // Actually, let's use a safe fallback: check 'products' collection first.
-
             return onSnapshot(doc(db, 'products', item.id), (docSnapshot) => {
                 if (docSnapshot.exists()) {
                     const data = docSnapshot.data();
@@ -41,8 +43,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Alert if stock drops below cart quantity
                     if (currentStock < item.quantity) {
                         toast.error(`⚠️ Stock insuficiente para ${item.name}. Disponible: ${currentStock}`);
-                        // Auto-update cart to max available? Or just warn?
-                        // Let's just warn for now to avoid confusing UI jumps, or clamp it.
                         updateQuantity(item.id, currentStock);
                     }
                 } else {
@@ -55,37 +55,26 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => {
             unsubscribes.forEach(unsub => unsub());
         };
-    }, [cart]);
+    }, [cart, updateQuantity, removeFromCart]);
 
-    const addToCart = (product: any) => {
+    const addToCart = (product: unknown) => {
+        const p = product as { id: string; stock: number; name: string; price: number };
         setCart(prev => {
-            const existing = prev.find(p => p.id === product.id);
+            const existing = prev.find(item => item.id === p.id);
             if (existing) {
-                if (existing.quantity + 1 > product.stock) {
+                if (existing.quantity + 1 > p.stock) {
                     toast.error('No hay más stock disponible');
                     return prev;
                 }
-                return prev.map(p => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
+                return prev.map(item => item.id === p.id ? { ...item, quantity: item.quantity + 1 } : item);
             }
-            if (product.stock < 1) {
+            if (p.stock < 1) {
                 toast.error('Producto agotado');
                 return prev;
             }
-            return [...prev, { ...product, quantity: 1 }];
+            return [...prev, { ...p, quantity: 1 } as CartItem];
         });
         toast.success('Agregado al carrito');
-    };
-
-    const removeFromCart = (id: string) => {
-        setCart(prev => prev.filter(item => item.id !== id));
-    };
-
-    const updateQuantity = (id: string, quantity: number) => {
-        if (quantity <= 0) {
-            removeFromCart(id);
-            return;
-        }
-        setCart(prev => prev.map(p => p.id === id ? { ...p, quantity } : p));
     };
 
     const clearCart = () => setCart([]);

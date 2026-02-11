@@ -17,7 +17,8 @@ import {
     runTransaction,
     orderBy,
     limit as firestoreLimit,
-    serverTimestamp
+    serverTimestamp,
+    DocumentData
 } from './firebase';
 import { generateSaleJournalEntry } from './accountingService';
 import {
@@ -97,7 +98,7 @@ export const recordInventoryMovement = async (
     const movementData: InventoryMovement = {
         ...movement,
         id: movementId,
-        createdAt: serverTimestamp() as any
+        createdAt: serverTimestamp()
     };
 
     await setDoc(doc(db, 'inventory_movements', movementId), movementData);
@@ -324,16 +325,17 @@ export const createInventorySummary = (
 export const initializeProductInventory = async (
     product: Product,
     branches: Branch[],
-    initialStock: number = 0
+    initialStockLength: number = 0
 ): Promise<void> => {
     for (const branch of branches) {
         const inventoryId = `${product.id}_${branch.id}`;
         const inventoryItem: InventoryItem = {
+            id: inventoryId,
             productId: product.id,
             branchId: branch.id,
-            stock: initialStock,
+            stock: initialStockLength,
             lowStockThreshold: 5,
-            updatedAt: new Date().toISOString()
+            updatedAt: serverTimestamp()
         };
         await setDoc(doc(db, 'inventory', inventoryId), inventoryItem);
     }
@@ -365,7 +367,7 @@ export const addInventoryBatch = async (
         cost,
         initialStock: quantity,
         remainingStock: quantity,
-        createdAt: new Date().toISOString(),
+        createdAt: serverTimestamp(),
         receivedBy: userId
     };
 
@@ -382,16 +384,17 @@ export const addInventoryBatch = async (
             const currentStock = inventoryDoc.data().stock || 0;
             transaction.update(inventoryRef, {
                 stock: currentStock + quantity,
-                updatedAt: new Date().toISOString()
+                updatedAt: serverTimestamp()
             });
         } else {
             // Initialize if not exists
             transaction.set(inventoryRef, {
+                id: inventoryId,
                 productId,
                 branchId,
                 stock: quantity,
                 lowStockThreshold: 5,
-                updatedAt: new Date().toISOString()
+                updatedAt: serverTimestamp()
             });
         }
     });
@@ -407,7 +410,7 @@ export const processAtomicSale = async (
         // RE-WRITING LOGIC ABOVE TO BE CORRECT WITH NON-IMPORTED INCREMENT
         await runTransaction(db, async (transaction) => {
             // 1. Reads & Locks (Aggregate)
-            const inventoryDocsMap = new Map<string, any>();
+            const inventoryDocsMap = new Map<string, { ref: ReturnType<typeof doc>; data: DocumentData }>();
             for (const item of items) {
                 const inventoryId = `${item.productId}_${item.branchId}`;
                 const ref = doc(db, 'inventory', inventoryId);
@@ -419,7 +422,7 @@ export const processAtomicSale = async (
 
             // 2. Reads & Locks (Batches) - FIFO Logic
             let totalTransactionCost = 0;
-            const batchUpdates: { ref: any, newRemaining: number }[] = [];
+            const batchUpdates: { ref: ReturnType<typeof doc>; newRemaining: number }[] = [];
 
             for (const item of items) {
                 // Fetch optimistic candidates
@@ -432,7 +435,7 @@ export const processAtomicSale = async (
                     // orderBy('createdAt', 'asc') // Enabling this requires index creation!
                 );
                 const batchQuerySnap = await getDocs(q);
-                let candidates = batchQuerySnap.docs
+                const candidates = batchQuerySnap.docs
                     .map(d => ({ ...d.data(), id: d.id } as InventoryBatch))
                     .sort((a, b) => a.createdAt.localeCompare(b.createdAt)); // JS Sort to implement FIFO if index missing
 
@@ -471,9 +474,10 @@ export const processAtomicSale = async (
             items.forEach(item => {
                 const id = `${item.productId}_${item.branchId}`;
                 const stored = inventoryDocsMap.get(id);
+                if (!stored) throw new Error(`Inventory not found for product: ${item.productName}`);
                 transaction.update(stored.ref, {
-                    stock: stored.data.stock - item.quantity,
-                    updatedAt: new Date().toISOString()
+                    stock: (stored.data.stock as number) - item.quantity,
+                    updatedAt: serverTimestamp()
                 });
 
                 // Movement Log
@@ -486,8 +490,8 @@ export const processAtomicSale = async (
                     branchName: 'Sucursal ' + item.branchId,
                     type: MovementType.SALIDA,
                     quantity: -item.quantity,
-                    previousStock: stored.data.stock,
-                    newStock: stored.data.stock - item.quantity,
+                    previousStock: stored.data.stock as number,
+                    newStock: (stored.data.stock as number) - item.quantity,
                     reason: 'Venta POS (FIFO)',
                     transactionId: transactionData.id,
                     userId,

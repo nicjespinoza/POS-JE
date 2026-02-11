@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest"
+    "test": "vitest",
+    "emulators:start": "firebase emulators:start --only auth,firestore",
+    "emulators:exec": "firebase emulators:exec --only auth,firestore",
+    "test:security": "firebase emulators:exec --only firestore 'vitest run'",
+    "deploy:rules": "firebase deploy --only firestore:rules"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
@@ -22,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",

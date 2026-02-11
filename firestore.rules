@@ -2,109 +2,215 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // ============================================================
+    // HELPER FUNCTIONS
+    // ============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
     
+    // Safe user data retrieval - handles missing user documents
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc.exists ? userDoc.data : null;
+    }
+    
+    function hasRole(role) {
+      let userData = getUserData();
+      return userData != null && userData.role == role;
     }
     
     function isAdmin() {
-      return isAuthenticated() && getUserData().role == 'ADMIN';
+      return isAuthenticated() && hasRole('ADMIN');
     }
     
     function isManager() {
-      return isAuthenticated() && (getUserData().role == 'MANAGER' || getUserData().role == 'ADMIN');
+      return isAuthenticated() && (hasRole('MANAGER') || hasRole('ADMIN'));
     }
     
     function isCashier() {
-      return isAuthenticated() && (getUserData().role == 'CASHIER' || isManager());
+      return isAuthenticated() && (hasRole('CASHIER') || isManager());
     }
-
+    
+    function getUserBranchId() {
+      let userData = getUserData();
+      return userData != null ? userData.branchId : null;
+    }
+    
+    // Transaction type validation - accepts INCOME and EXPENSE
+    function isValidTransactionType(type) {
+      return type == 'INCOME' || type == 'EXPENSE';
+    }
+    
+    // Transaction schema validation with required fields
+    function isValidTransactionData(data) {
+      return data.keys().hasAll(['amount', 'type', 'branchId', 'date', 'description', 'createdBy']) &&
+             data.amount is number && data.amount > 0 &&
+             data.type is string && isValidTransactionType(data.type) &&
+             data.branchId is string && data.branchId.size() > 0 &&
+             data.date is string && data.date.size() > 0 &&
+             data.description is string && data.description.size() > 0 &&
+             data.createdBy is string && data.createdBy == request.auth.uid &&
+             (!data.keys().hasAny(['items']) || data.items is list);
+    }
+    
+    // ============================================================
+    // COLLECTION RULES
+    // ============================================================
+    
     // --- Users Collection ---
-    // Administrators can manage all users.
-    // Users can read their own profile.
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isManager());
-      allow write: if isAdmin();
-      // Allow users to create their own profile on first login (if logic requires it)
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isAuthenticated() && 
+        (request.auth.uid == userId || isManager());
+      allow create: if isAuthenticated() && 
+        request.auth.uid == userId;
+      allow update: if isAuthenticated() && 
+        (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
     }
 
     // --- Products Collection ---
-    // Public read for POS (or restricted to authenticated).
-    // Write only by Managers/Admins.
     match /products/{productId} {
       allow read: if isAuthenticated();
       allow write: if isManager();
     }
 
     // --- Transactions Collection ---
-    // Enforce Branch Isolation & Data Integrity
+    // SECURITY REQUIREMENTS:
+    // - Branch isolation: Users only see transactions from their branch
+    // - Role-based creation: Cashiers+ can create, Managers+ can update/delete
+    // - Type validation: Must be INCOME or EXPENSE
+    // - Data integrity: Required fields validated
     match /transactions/{transactionId} {
-      // READ: Admin sees all. Others only see their branch.
-      allow read: if isAuthenticated() && (
+      // READ: Admin sees all. Others only see their branch transactions.
+      allow get: if isAuthenticated() && (
         isAdmin() || 
-        (resource.data.branchId == getUserData().branchId)
+        (resource.data.branchId == getUserBranchId())
       );
       
-      // CREATE: Helper to verify branch match on create AND Data Integrity
-      // User must be at least a Cashier and can only create for their assigned branch
-      allow create: if isCashier() && (
+      allow list: if isAuthenticated() && (
         isAdmin() || 
-        (
-           request.resource.data.branchId == getUserData().branchId &&
-           request.resource.data.amount > 0 &&
-           request.resource.data.items.size() > 0 && 
-           request.resource.data.type == 'INCOME' 
-           // Add more schema validation as needed
-        )
+        (resource.data.branchId == getUserBranchId())
       );
+      
+      // CREATE: Cashier+ can create transactions for their branch only
+      // Validates: branch matches user, amount > 0, valid type (INCOME/EXPENSE), 
+      // required fields present
+      allow create: if isCashier() && isValidTransactionData(request.resource.data) &&
+        (
+          isAdmin() || 
+          request.resource.data.branchId == getUserBranchId()
+        );
 
-      allow update, delete: if isManager();
+      // UPDATE: Managers+ only. Cannot change branchId for security.
+      allow update: if isManager() && 
+        isValidTransactionData(request.resource.data) &&
+        (
+          isAdmin() || 
+          (
+            resource.data.branchId == getUserBranchId() &&
+            request.resource.data.branchId == resource.data.branchId
+          )
+        );
+        
+      allow delete: if isManager() && 
+        (
+          isAdmin() || 
+          resource.data.branchId == getUserBranchId()
+        );
     }
     
     // --- Branches Collection ---
-    // All authenticated users can read branches.
-    // Only Admin can modify branches.
     match /branches/{branchId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // --- Inventory Collection (per branch stock) ---
+    // --- Inventory Collection ---
     match /inventory/{inventoryId} {
-      // Read: Admin sees all, others see their branch only
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        (resource.data.branchId == getUserData().branchId)
+        resource.data.branchId == getUserBranchId()
       );
-      // Write: Managers can update their branch inventory
       allow write: if isManager() && (
         isAdmin() || 
-        (request.resource.data.branchId == getUserData().branchId)
+        request.resource.data.branchId == getUserBranchId()
       );
     }
 
     // --- Access Control / Authorized Users ---
-    // Source of Truth for Role Assignment
     match /access_users/{email} {
-      allow read: if isAuthenticated(); // Authenticated users (or login page logic) checks this
-      allow write: if isAdmin(); // Only Admin can manage access list
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // --- Authorized IPs ---
     match /authorized_ips/{id} {
-        allow read: if isAuthenticated();
-        allow write: if isAdmin();
-    }
-    
-    // --- Categories/Roles/Settings (Global) ---
-    match /{document=**} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+    
+    // --- Categories Collection ---
+    match /categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
+    }
+    
+    // --- Settings/Configuration ---
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // --- Roles Collection ---
+    match /roles/{roleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // --- Inventory Movements (Audit Trail) ---
+    match /inventory_movements/{movementId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.branchId == getUserBranchId()
+      );
+      // Only system/processAtomicSale can create - managed by Cloud Functions
+      allow create: if false;
+      allow update, delete: if false;
+    }
+    
+    // --- Stock Transfers ---
+    match /stock_transfers/{transferId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.sourceBranchId == getUserBranchId() ||
+        resource.data.targetBranchId == getUserBranchId()
+      );
+      allow create: if isManager() && 
+        request.resource.data.sourceBranchId == getUserBranchId();
+      allow update: if isManager() && (
+        isAdmin() ||
+        resource.data.sourceBranchId == getUserBranchId() ||
+        resource.data.targetBranchId == getUserBranchId()
+      );
+      allow delete: if isAdmin();
+    }
+    
+    // --- Audit Logs ---
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.userId == request.auth.uid
+      );
+      allow create, update, delete: if false;
+    }
+    
+    // --- Fallback: Deny All ---
+    // Any collection not explicitly defined above is denied
+    match /{document=**} {
+      allow read: if false;
+      allow write: if false;
     }
   }
 }

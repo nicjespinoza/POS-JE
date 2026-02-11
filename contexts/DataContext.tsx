@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc } from '../services/firebase';
+import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, orderBy, limit } from '../services/firebase';
 import { processAtomicSale } from '../services/inventoryService';
 import { Product, Transaction, CategoryState, RoleDefinition } from '../types'; // Adjust imports
 import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../constants'; // Fallbacks
@@ -38,7 +38,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [products, setProducts] = useState<Product[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     // Assuming CategoryState is { income: string[], expense: string[] } based on AdminDashboard
-    const [categories, setCategories] = useState<any>(DEFAULT_CATEGORIES);
+    const [categories, setCategories] = useState<CategoryState>(DEFAULT_CATEGORIES);
     const [roles, setRoles] = useState<RoleDefinition[]>(DEFAULT_ROLES);
     const [loadingData, setLoadingData] = useState(true);
 
@@ -87,15 +87,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             setTransactions(items.slice(0, 50));
         });
-        return () => unsubscribe();
-    }, []);
+        return () => unsubscribeTransactions();
+    }, [userProfile]);
 
     const addProduct = async (product: Product) => {
         await setDoc(doc(db, 'products', product.id), product);
     };
 
     const updateProduct = async (product: Product) => {
-        await updateDoc(doc(db, 'products', product.id), { ...product });
+        await updateDoc(doc(db, 'products', product.id), { ...(product as any) });
     };
 
     const deleteProduct = async (id: string) => {
