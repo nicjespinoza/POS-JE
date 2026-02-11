@@ -4,6 +4,8 @@ import {
     query,
     where,
     getDocs,
+    getDoc,
+    doc,
     Timestamp
 } from '../lib/firebase';
 import { AccountType, InventoryBatch, JournalEntry, JournalEntryLine } from '../lib/types';
@@ -116,6 +118,60 @@ export const getInventoryValuation = async (branchId?: string): Promise<number> 
     });
 
     return totalValue;
+};
+
+// ============================================
+// PRE-AGGREGATED QUERIES (powered by Cloud Functions)
+// ============================================
+
+/**
+ * Read pre-aggregated monthly P&L from financial_summaries collection.
+ * Falls back to raw scan if summary doc doesn't exist yet.
+ */
+export const getMonthlyPnL = async (year: number, month: number, branchId?: string): Promise<ReportPnL> => {
+    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    const docId = branchId ? `${monthKey}_${branchId}` : `${monthKey}_all`;
+
+    const snap = await getDoc(doc(db, 'financial_summaries', docId));
+
+    if (snap.exists()) {
+        const data = snap.data();
+        const revenue = data.revenue || 0;
+        const cogs = data.cogs || 0;
+        const expenses = data.expenses || 0;
+
+        return {
+            startDate: `${monthKey}-01T00:00:00.000Z`,
+            endDate: `${monthKey}-31T23:59:59.999Z`,
+            revenue,
+            cogs,
+            grossProfit: revenue - cogs,
+            expenses,
+            netProfit: (revenue - cogs) - expenses,
+            details: { revenueByAccount: {}, expensesByAccount: {} }
+        };
+    }
+
+    // Fallback: raw scan for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+    return getProfitAndLoss(startDate, endDate);
+};
+
+/**
+ * Read pre-aggregated inventory valuation (1 doc read instead of full scan).
+ * Falls back to full scan if summary doesn't exist.
+ */
+export const getInventoryValuationFast = async (branchId?: string): Promise<number> => {
+    const docId = branchId || 'all';
+    const snap = await getDoc(doc(db, 'inventory_valuations', docId));
+
+    if (snap.exists()) {
+        return snap.data().totalValue || 0;
+    }
+
+    // Fallback to full scan
+    return getInventoryValuation(branchId);
 };
 
 /**

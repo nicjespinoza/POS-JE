@@ -1,16 +1,17 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, limit, orderBy } from '../lib/firebase'; // Added orderBy, limit
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, deleteDoc, limit, orderBy } from '../lib/firebase';
 import { processAtomicSale } from '../services/inventoryService';
-import { Product, Transaction, CategoryState, RoleDefinition } from '../lib/types'; // Adjust imports
-import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../lib/constants'; // Fallbacks
-import { useAuth } from '../contexts/AuthContext'; // Use local AuthProvider
+import { getAllProductsBatched } from '../services/productService';
+import { Product, Transaction, CategoryState, RoleDefinition } from '../lib/types';
+import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../lib/constants';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DataContextType {
     products: Product[];
     transactions: Transaction[];
-    categories: CategoryState; // Ensure this matches types.ts
+    categories: CategoryState;
     roles: RoleDefinition[];
     loadingData: boolean;
     addProduct: (p: Product) => Promise<void>;
@@ -19,6 +20,7 @@ interface DataContextType {
     addTransaction: (t: Transaction) => Promise<void>;
     updateTransaction: (t: Transaction) => Promise<void>;
     deleteTransaction: (id: string) => Promise<void>;
+    refreshProducts: () => Promise<void>;
     currency: { symbol: string; code: string; };
     taxRate: number;
     lowStockThreshold: number;
@@ -48,20 +50,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [roles, setRoles] = useState<RoleDefinition[]>(DEFAULT_ROLES);
     const [loadingData, setLoadingData] = useState(true);
 
-    // Load Products (Real-time)
-    useEffect(() => {
-        const q = query(collection(db, 'products')); // Potentially filter by branch in future
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const items: Product[] = [];
-            snapshot.forEach((doc) => {
-                items.push(doc.data() as Product);
-            });
-            // If empty, maybe fall back to mock or localStorage for migration (skip for now)
-            setProducts(items);
+    // Load Products (batched pagination instead of full-collection onSnapshot)
+    const loadProducts = useCallback(async () => {
+        try {
+            const allProducts = await getAllProductsBatched();
+            setProducts(allProducts);
+        } catch (error) {
+            console.error('Error loading products:', error);
+        } finally {
             setLoadingData(false);
-        });
-        return () => unsubscribe();
+        }
     }, []);
+
+    useEffect(() => {
+        loadProducts();
+    }, [loadProducts]);
+
+    const refreshProducts = useCallback(async () => {
+        await loadProducts();
+    }, [loadProducts]);
 
     // Load Transactions (Real-time)
     useEffect(() => {
@@ -110,9 +117,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const deleteProduct = async (id: string) => {
-        // In Firestore usually we just mark active:false, but for now delete
-        // Implementation depends on needs
-        console.warn("Delete not fully implemented in this snippet");
+        await deleteDoc(doc(db, 'products', id));
+        setProducts(prev => prev.filter(p => p.id !== id));
     };
 
     const addTransaction = async (transaction: Transaction) => {
@@ -146,7 +152,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const deleteTransaction = async (id: string) => {
-        // Implement delete
+        await deleteDoc(doc(db, 'transactions', id));
     };
 
     const [currency, setCurrency] = useState({ symbol: '$', code: 'USD' });
@@ -173,7 +179,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             deleteProduct,
             addTransaction,
             updateTransaction,
-            deleteTransaction
+            deleteTransaction,
+            refreshProducts
         }}>
             {children}
         </DataContext.Provider>

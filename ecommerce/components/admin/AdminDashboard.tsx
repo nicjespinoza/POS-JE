@@ -49,7 +49,7 @@ import { useData } from '../../providers/DataProvider';
 import { analyzeBusinessData } from '../../services/geminiService';
 import { ALL_PERMISSIONS } from '../../lib/constants';
 import { Transaction, Product, Role, TransactionType, UserProfile, RoleDefinition, Permission } from '../../lib/types';
-import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { InventoryItem, InventoryMovement, MovementType, Branch } from '../../lib/types';
 import { getInventoryByBranch, getInventoryMovements, createInventorySummary } from '../../services/inventoryService';
@@ -315,10 +315,14 @@ export const AdminDashboard: React.FC = () => {
     const handleBulkDelete = async () => {
         if (!window.confirm(`¿Estás seguro de eliminar ${selectedIds.size} transacciones?`)) return;
         try {
-            const promises = Array.from(selectedIds).map(id => deleteDoc(doc(db, 'transactions', id)));
-            await Promise.all(promises);
+            const ids = Array.from(selectedIds);
+            for (let i = 0; i < ids.length; i += 500) {
+                const chunk = ids.slice(i, i + 500);
+                const batch = writeBatch(db);
+                chunk.forEach(id => batch.delete(doc(db, 'transactions', id)));
+                await batch.commit();
+            }
             setSelectedIds(new Set());
-            // Toast success
         } catch (e) {
             console.error("Bulk delete failed", e);
         }
@@ -328,12 +332,17 @@ export const AdminDashboard: React.FC = () => {
         try {
             const updates: any = {};
             if (bulkEditValues.category) updates.category = bulkEditValues.category;
-            if (bulkEditValues.date) updates.date = new Date(bulkEditValues.date).toISOString(); // Simple date fix
+            if (bulkEditValues.date) updates.date = new Date(bulkEditValues.date).toISOString();
 
             if (Object.keys(updates).length === 0) return;
 
-            const promises = Array.from(selectedIds).map(id => updateDoc(doc(db, 'transactions', id), updates));
-            await Promise.all(promises);
+            const ids = Array.from(selectedIds);
+            for (let i = 0; i < ids.length; i += 500) {
+                const chunk = ids.slice(i, i + 500);
+                const batch = writeBatch(db);
+                chunk.forEach(id => batch.update(doc(db, 'transactions', id), updates));
+                await batch.commit();
+            }
             setShowBulkEditModal(false);
             setSelectedIds(new Set());
             setBulkEditValues({ category: '', date: '' });

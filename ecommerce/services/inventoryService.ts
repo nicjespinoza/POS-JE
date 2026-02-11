@@ -16,8 +16,12 @@ import {
     Timestamp,
     runTransaction,
     increment,
+    orderBy,
+    limit,
+    startAfter,
     DocumentData
 } from '../lib/firebase';
+import type { QueryDocumentSnapshot } from '../lib/firebase';
 import { generateSaleJournalEntry } from './accountingService';
 import {
     InventoryItem,
@@ -508,4 +512,98 @@ export const processAtomicSale = async (
         console.error("FIFO Transaction Failed:", e);
         throw e;
     }
+};
+
+// ============================================
+// PAGINATED INVENTORY FUNCTIONS
+// ============================================
+
+export interface InventoryPage {
+    items: InventoryItem[];
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null;
+    hasMore: boolean;
+}
+
+/**
+ * Paginated inventory loading — replaces full-collection onSnapshot for Admin.
+ */
+export const getInventoryPaginated = async (
+    branchId: string,
+    pageSize: number = 100,
+    lastDocCursor?: QueryDocumentSnapshot<DocumentData> | null
+): Promise<InventoryPage> => {
+    let constraints: any[] = [orderBy('productId'), limit(pageSize)];
+
+    if (branchId !== 'all') {
+        constraints = [where('branchId', '==', branchId), orderBy('productId'), limit(pageSize)];
+    }
+
+    if (lastDocCursor) {
+        constraints.push(startAfter(lastDocCursor));
+    }
+
+    const q = query(collection(db, 'inventory'), ...constraints);
+    const snapshot = await getDocs(q);
+
+    const items = snapshot.docs.map(d => ({
+        ...d.data(),
+        id: d.id
+    } as InventoryItem));
+
+    return {
+        items,
+        lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+        hasMore: snapshot.docs.length === pageSize
+    };
+};
+
+/**
+ * Load all inventory in batches (for Admin summary that needs full data).
+ */
+export const getAllInventoryBatched = async (branchId: string = 'all'): Promise<InventoryItem[]> => {
+    const allItems: InventoryItem[] = [];
+    let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+    let hasMore = true;
+
+    while (hasMore) {
+        const page = await getInventoryPaginated(branchId, 200, lastDoc);
+        allItems.push(...page.items);
+        lastDoc = page.lastDoc;
+        hasMore = page.hasMore;
+    }
+
+    return allItems;
+};
+
+/**
+ * Paginated movements loading.
+ */
+export const getMovementsPaginated = async (
+    branchId: string,
+    pageSize: number = 100,
+    lastDocCursor?: QueryDocumentSnapshot<DocumentData> | null
+): Promise<{ movements: InventoryMovement[]; lastDoc: QueryDocumentSnapshot<DocumentData> | null; hasMore: boolean }> => {
+    let constraints: any[] = [orderBy('createdAt', 'desc'), limit(pageSize)];
+
+    if (branchId !== 'all') {
+        constraints = [where('branchId', '==', branchId), orderBy('createdAt', 'desc'), limit(pageSize)];
+    }
+
+    if (lastDocCursor) {
+        constraints.push(startAfter(lastDocCursor));
+    }
+
+    const q = query(collection(db, 'inventory_movements'), ...constraints);
+    const snapshot = await getDocs(q);
+
+    const movements = snapshot.docs.map(d => ({
+        ...d.data(),
+        id: d.id
+    } as InventoryMovement));
+
+    return {
+        movements,
+        lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+        hasMore: snapshot.docs.length === pageSize
+    };
 };
