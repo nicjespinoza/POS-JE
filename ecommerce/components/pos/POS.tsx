@@ -13,6 +13,7 @@ import { Product, Transaction, TransactionType, Role, CartItem } from '../../lib
 import { processAtomicSale } from '../../services/inventoryService'; // Updated Import
 import { doc, getDoc } from 'firebase/firestore'; // Check if needed, maybe for specific actions
 import { db } from '../../lib/firebase';
+import { POSInventory } from './POSInventory';
 
 // Types for POS Component
 
@@ -75,6 +76,9 @@ export const POS: React.FC = () => {
 
     // Theme (Handled by next-themes usually, but kept local state for now if needed, or stripped)
     const [isDark, setIsDark] = useState(true); // Default dark for "Premium" feel
+
+    // Inventory
+    const [showInventory, setShowInventory] = useState(false);
 
     // Calculator
     const [showCalculator, setShowCalculator] = useState(false);
@@ -217,6 +221,12 @@ export const POS: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowInventory(true)}
+                        className="px-4 py-2 rounded-xl bg-purple-600 text-white font-medium text-sm flex items-center gap-2 hover:bg-purple-700 transition-colors"
+                    >
+                        <Box size={18} /> Inventario
+                    </button>
                     <button
                         onClick={() => setShowLayoutModal(true)}
                         className="p-3 rounded-full hover:bg-gray-100 dark:hover:bg-white/10"
@@ -378,6 +388,9 @@ export const POS: React.FC = () => {
                     )}
                 </GlassCard>
             </div>
+
+            {/* Inventory Modal */}
+            {showInventory && <POSInventory onClose={() => setShowInventory(false)} />}
         </div>
     );
 };

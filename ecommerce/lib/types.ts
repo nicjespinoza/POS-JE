@@ -51,9 +51,15 @@ export interface Product {
     price: number; // Base price
     cost?: number; // Costo para contabilidad
     category: string;
-    image: string;
+    image: string; // Main image URL (backward compatible)
+    images?: string[]; // Up to 10 images
+    mainImageIndex?: number; // Index of the main image in images[]
     description?: string;
     sku?: string;
+    brand?: string;
+    size?: string[];
+    color?: string;
+    discount?: number; // Percentage discount
     stock: number; // Legacy support for UI
     // Stock is now handled separately per branch, but for UI convenience we might calculate a "current branch stock"
     currentStock?: number;

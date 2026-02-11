@@ -53,8 +53,14 @@ export interface Product {
   cost?: number;
   category: string;
   image: string;
+  images?: string[];
+  mainImageIndex?: number;
   description?: string;
   sku?: string;
+  brand?: string;
+  size?: string[];
+  color?: string;
+  discount?: number;
   stock: number;
   currentStock?: number;
 }

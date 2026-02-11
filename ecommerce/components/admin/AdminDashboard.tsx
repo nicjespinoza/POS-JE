@@ -51,6 +51,8 @@ import { ALL_PERMISSIONS } from '../../lib/constants';
 import { Transaction, Product, Role, TransactionType, UserProfile, RoleDefinition, Permission } from '../../lib/types';
 import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { InventoryItem, InventoryMovement, MovementType, Branch } from '../../lib/types';
+import { getInventoryByBranch, getInventoryMovements, createInventorySummary } from '../../services/inventoryService';
 
 // Helper for sorting
 type SortKey = 'date' | 'amount' | 'category' | 'description' | 'type';
@@ -60,7 +62,7 @@ export const AdminDashboard: React.FC = () => {
     const { userProfile, isAdmin, isManager } = useAuth();
     const { transactions, products, categories, roles, loadingData, currency, lowStockThreshold, taxRate, updateTaxRate, updateLowStockThreshold } = useData();
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'reports'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'reports' | 'kardex'>('overview');
 
     // UI State for Modals
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -70,6 +72,18 @@ export const AdminDashboard: React.FC = () => {
     // Inventory State
     const [productSearch, setProductSearch] = useState('');
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [allInventory, setAllInventory] = useState<InventoryItem[]>([]);
+    const [allMovements, setAllMovements] = useState<InventoryMovement[]>([]);
+    const [inventoryLoading, setInventoryLoading] = useState(true);
+    const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
+    const [kardexProductFilter, setKardexProductFilter] = useState<string>('all');
+    const [kardexTypeFilter, setKardexTypeFilter] = useState<string>('all');
+
+    const BRANCHES: Branch[] = [
+        { id: 'suc-1', name: 'Sucursal Centro', isActive: true },
+        { id: 'suc-2', name: 'Sucursal Norte', isActive: true },
+        { id: 'suc-3', name: 'Sucursal Sur', isActive: true },
+    ];
 
     // Roles State
     const [selectedRole, setSelectedRole] = useState<RoleDefinition | null>(null);
@@ -102,24 +116,82 @@ export const AdminDashboard: React.FC = () => {
     const [productForm, setProductForm] = useState({
         name: '',
         price: '',
+        cost: '',
         stock: '',
         category: '',
-        image: ''
+        image: '',
+        brand: '',
+        sku: '',
+        color: '',
+        description: '',
+        discount: '',
     });
+    const [productImages, setProductImages] = useState<string[]>([]);
+    const [mainImageIndex, setMainImageIndex] = useState(0);
+    const [newImageUrl, setNewImageUrl] = useState('');
 
     useEffect(() => {
         if (editingProduct) {
             setProductForm({
                 name: editingProduct.name,
                 price: editingProduct.price.toString(),
+                cost: (editingProduct.cost || '').toString(),
                 stock: editingProduct.stock.toString(),
                 category: editingProduct.category,
-                image: editingProduct.image || ''
+                image: editingProduct.image || '',
+                brand: editingProduct.brand || '',
+                sku: editingProduct.sku || '',
+                color: editingProduct.color || '',
+                description: editingProduct.description || '',
+                discount: (editingProduct.discount || '').toString(),
             });
+            setProductImages(editingProduct.images || (editingProduct.image ? [editingProduct.image] : []));
+            setMainImageIndex(editingProduct.mainImageIndex || 0);
         } else {
-            setProductForm({ name: '', price: '', stock: '', category: '', image: '' });
+            setProductForm({ name: '', price: '', cost: '', stock: '', category: '', image: '', brand: '', sku: '', color: '', description: '', discount: '' });
+            setProductImages([]);
+            setMainImageIndex(0);
         }
+        setNewImageUrl('');
     }, [editingProduct]);
+
+    // Load Inventory Data (Admin sees all branches)
+    useEffect(() => {
+        const unsubInv = getInventoryByBranch('all', (items) => {
+            setAllInventory(items);
+            setInventoryLoading(false);
+        });
+        const unsubMov = getInventoryMovements('all', 200, (items) => {
+            setAllMovements(items);
+        });
+        return () => { unsubInv(); unsubMov(); };
+    }, []);
+
+    // Inventory summary per branch
+    const inventorySummary = useMemo(() => {
+        return createInventorySummary(products, allInventory, BRANCHES);
+    }, [products, allInventory]);
+
+    const filteredInventorySummary = useMemo(() => {
+        return inventorySummary.filter(item =>
+            item.productName.toLowerCase().includes(productSearch.toLowerCase()) ||
+            item.category.toLowerCase().includes(productSearch.toLowerCase())
+        );
+    }, [inventorySummary, productSearch]);
+
+    const filteredKardexMovements = useMemo(() => {
+        let filtered = allMovements;
+        if (selectedBranchFilter !== 'all') {
+            filtered = filtered.filter(m => m.branchId === selectedBranchFilter);
+        }
+        if (kardexProductFilter !== 'all') {
+            filtered = filtered.filter(m => m.productId === kardexProductFilter);
+        }
+        if (kardexTypeFilter !== 'all') {
+            filtered = filtered.filter(m => m.type === kardexTypeFilter);
+        }
+        return filtered;
+    }, [allMovements, selectedBranchFilter, kardexProductFilter, kardexTypeFilter]);
 
     // Role Editing Effects
     useEffect(() => {
@@ -286,14 +358,34 @@ export const AdminDashboard: React.FC = () => {
         p.category.toLowerCase().includes(productSearch.toLowerCase())
     );
 
+    const handleAddImage = () => {
+        if (!newImageUrl.trim() || productImages.length >= 10) return;
+        setProductImages(prev => [...prev, newImageUrl.trim()]);
+        setNewImageUrl('');
+    };
+
+    const handleRemoveImage = (index: number) => {
+        setProductImages(prev => prev.filter((_, i) => i !== index));
+        if (mainImageIndex >= productImages.length - 1) setMainImageIndex(Math.max(0, productImages.length - 2));
+    };
+
     const handleSaveProduct = async (e: React.FormEvent) => {
         e.preventDefault();
+        const mainImg = productImages.length > 0 ? productImages[mainImageIndex] || productImages[0] : productForm.image;
         const productData = {
             name: productForm.name,
             price: parseFloat(productForm.price),
+            cost: productForm.cost ? parseFloat(productForm.cost) : undefined,
             stock: parseInt(productForm.stock),
             category: productForm.category || 'General',
-            image: productForm.image || '',
+            image: mainImg || '',
+            images: productImages,
+            mainImageIndex: mainImageIndex,
+            brand: productForm.brand || undefined,
+            sku: productForm.sku || undefined,
+            color: productForm.color || undefined,
+            description: productForm.description || undefined,
+            discount: productForm.discount ? parseFloat(productForm.discount) : 0,
             updatedAt: new Date().toISOString()
         };
 
@@ -301,8 +393,10 @@ export const AdminDashboard: React.FC = () => {
             if (editingProduct) {
                 await updateDoc(doc(db, 'products', editingProduct.id), productData);
             } else {
-                await addDoc(collection(db, 'products'), {
+                const newId = productForm.sku?.toLowerCase().replace(/\s+/g, '-') || crypto.randomUUID();
+                await setDoc(doc(db, 'products', newId), {
                     ...productData,
+                    id: newId,
                     createdAt: new Date().toISOString()
                 });
             }
@@ -428,6 +522,12 @@ export const AdminDashboard: React.FC = () => {
                         <Box size={16} /> Inventario
                     </button>
                     <button
+                        onClick={() => setActiveTab('kardex')}
+                        className={`flex-1 md:flex-none px-6 py-2.5 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activeTab === 'kardex' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-white'}`}
+                    >
+                        <Calendar size={16} /> Kardex
+                    </button>
+                    <button
                         onClick={() => setActiveTab('reports')}
                         className={`flex-1 md:flex-none px-6 py-2.5 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 ${activeTab === 'reports' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-white'}`}
                     >
@@ -537,54 +637,206 @@ export const AdminDashboard: React.FC = () => {
                     </>
                 ) : activeTab === 'inventory' ? (
                     <div className="space-y-6">
-                        <GlassCard className="p-4 flex justify-between items-center">
+                        {/* Inventory Stats Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <GlassCard className="p-4">
+                                <div className="text-sm text-slate-500 dark:text-gray-400">Total Productos</div>
+                                <div className="text-2xl font-bold dark:text-white">{products.length}</div>
+                            </GlassCard>
+                            {BRANCHES.map(branch => {
+                                const branchTotal = allInventory
+                                    .filter(i => i.branchId === branch.id)
+                                    .reduce((sum, i) => sum + i.stock, 0);
+                                return (
+                                    <GlassCard key={branch.id} className="p-4">
+                                        <div className="text-sm text-slate-500 dark:text-gray-400">{branch.name}</div>
+                                        <div className="text-2xl font-bold dark:text-white">{branchTotal} <span className="text-sm font-normal text-gray-400">unidades</span></div>
+                                    </GlassCard>
+                                );
+                            })}
+                        </div>
+
+                        {/* Search + Add */}
+                        <GlassCard className="p-4 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div className="relative w-full max-w-md">
                                 <Search className="absolute left-3 top-3 text-slate-400" size={18} />
                                 <input
                                     type="text"
                                     placeholder="Buscar producto..."
-                                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-gray-50 dark:bg-white/5 border-none outline-none"
+                                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-gray-50 dark:bg-white/5 border-none outline-none dark:text-white"
                                     value={productSearch}
                                     onChange={(e) => setProductSearch(e.target.value)}
                                 />
                             </div>
                             <button
                                 onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
-                                className="px-4 py-2 bg-purple-600 text-white rounded-lg flex items-center gap-2"
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg flex items-center gap-2 shrink-0"
                             >
-                                <Plus size={18} /> Nuevo
+                                <Plus size={18} /> Nuevo Producto
                             </button>
                         </GlassCard>
 
-                        <GlassCard className="p-6">
+                        {/* Inventory Table with Branch Columns */}
+                        <GlassCard className="p-6 overflow-x-auto">
                             <table className="w-full text-left text-sm">
                                 <thead>
-                                    <tr className="border-b dark:border-white/10 text-slate-500">
-                                        <th className="py-3 px-2">Nombre</th>
-                                        <th className="py-3 px-2">Categoría</th>
+                                    <tr className="border-b dark:border-white/10 text-slate-500 text-xs uppercase">
+                                        <th className="py-3 px-2">Producto</th>
+                                        <th className="py-3 px-2">Categoria</th>
                                         <th className="py-3 px-2 text-right">Precio</th>
-                                        <th className="py-3 px-2 text-center">Stock</th>
+                                        {BRANCHES.map(b => (
+                                            <th key={b.id} className="py-3 px-2 text-center">{b.name.replace('Sucursal ', '')}</th>
+                                        ))}
+                                        <th className="py-3 px-2 text-center font-bold">Total</th>
                                         <th className="py-3 px-2 text-right">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredProducts.map(p => (
-                                        <tr key={p.id} className="border-b border-gray-100 dark:border-white/5">
-                                            <td className="py-3 px-2 font-medium">{p.name}</td>
-                                            <td className="py-3 px-2">{p.category}</td>
-                                            <td className="py-3 px-2 text-right">{currency.symbol}{p.price.toFixed(2)}</td>
+                                    {filteredInventorySummary.map(item => (
+                                        <tr key={item.productId} className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5">
+                                            <td className="py-3 px-2">
+                                                <div className="flex items-center gap-2">
+                                                    <img src={item.image} alt={item.productName} className="w-8 h-8 rounded-lg object-cover" />
+                                                    <span className="font-medium dark:text-white">{item.productName}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-3 px-2 text-gray-500">{item.category}</td>
+                                            <td className="py-3 px-2 text-right dark:text-white">{currency.symbol}{item.price.toFixed(2)}</td>
+                                            {item.stockByBranch.map(sb => (
+                                                <td key={sb.branchId} className="py-3 px-2 text-center">
+                                                    <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold ${sb.stock === 0 ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                        sb.lowStock ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                        }`}>
+                                                        {sb.stock}
+                                                    </span>
+                                                </td>
+                                            ))}
                                             <td className="py-3 px-2 text-center">
-                                                <span className={`px-2 py-0.5 rounded-full text-xs ${p.stock <= 0 ? 'bg-red-100 text-red-700' :
-                                                    p.stock < lowStockThreshold ? 'bg-amber-100 text-amber-700' :
-                                                        'bg-green-100 text-green-700'
-                                                    }`}>
-                                                    {p.stock}
+                                                <span className="font-bold dark:text-white">{item.totalStock}</span>
+                                            </td>
+                                            <td className="py-3 px-2 text-right">
+                                                <div className="flex justify-end gap-1">
+                                                    <button onClick={() => { const p = products.find(pr => pr.id === item.productId); if (p) { setEditingProduct(p); setShowProductModal(true); } }} className="p-1 hover:text-purple-600 dark:text-gray-400"><Edit2 size={16} /></button>
+                                                    <button onClick={() => onDeleteProduct(item.productId)} className="p-1 hover:text-red-600 dark:text-gray-400"><Trash2 size={16} /></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-gray-50 dark:bg-white/5 font-bold">
+                                        <td colSpan={3} className="py-3 px-2 dark:text-white">TOTALES</td>
+                                        {BRANCHES.map(branch => {
+                                            const total = allInventory.filter(i => i.branchId === branch.id).reduce((s, i) => s + i.stock, 0);
+                                            return <td key={branch.id} className="py-3 px-2 text-center dark:text-white">{total}</td>;
+                                        })}
+                                        <td className="py-3 px-2 text-center dark:text-white">{allInventory.reduce((s, i) => s + i.stock, 0)}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </GlassCard>
+                    </div>
+                ) : activeTab === 'kardex' ? (
+                    <div className="space-y-6">
+                        {/* Kardex Filters */}
+                        <GlassCard className="p-4">
+                            <div className="flex flex-wrap gap-4 items-end">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Sucursal</label>
+                                    <select
+                                        value={selectedBranchFilter}
+                                        onChange={e => setSelectedBranchFilter(e.target.value)}
+                                        className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm dark:text-white"
+                                    >
+                                        <option value="all">Todas</option>
+                                        {BRANCHES.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Producto</label>
+                                    <select
+                                        value={kardexProductFilter}
+                                        onChange={e => setKardexProductFilter(e.target.value)}
+                                        className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm dark:text-white"
+                                    >
+                                        <option value="all">Todos</option>
+                                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
+                                    <select
+                                        value={kardexTypeFilter}
+                                        onChange={e => setKardexTypeFilter(e.target.value)}
+                                        className="px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm dark:text-white"
+                                    >
+                                        <option value="all">Todos</option>
+                                        <option value="ENTRADA">Entrada</option>
+                                        <option value="SALIDA">Salida</option>
+                                        <option value="TRANSFERENCIA">Transferencia</option>
+                                        <option value="AJUSTE">Ajuste</option>
+                                    </select>
+                                </div>
+                                <div className="text-sm text-gray-500 dark:text-gray-400 ml-auto">
+                                    {filteredKardexMovements.length} movimientos
+                                </div>
+                            </div>
+                        </GlassCard>
+
+                        {/* Kardex Table */}
+                        <GlassCard className="p-6 overflow-x-auto">
+                            <h3 className="text-lg font-bold mb-4 dark:text-white flex items-center gap-2">
+                                <Calendar size={20} className="text-purple-500" /> Movimientos de Inventario (Kardex)
+                            </h3>
+                            <table className="w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b dark:border-white/10 text-slate-500 text-xs uppercase">
+                                        <th className="py-3 px-2">Fecha</th>
+                                        <th className="py-3 px-2">Sucursal</th>
+                                        <th className="py-3 px-2">Tipo</th>
+                                        <th className="py-3 px-2">Producto</th>
+                                        <th className="py-3 px-2 text-center">Cantidad</th>
+                                        <th className="py-3 px-2 text-center">Anterior</th>
+                                        <th className="py-3 px-2 text-center">Nuevo</th>
+                                        <th className="py-3 px-2">Motivo</th>
+                                        <th className="py-3 px-2">Usuario</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredKardexMovements.length === 0 ? (
+                                        <tr><td colSpan={9} className="py-8 text-center text-gray-400">Sin movimientos para los filtros seleccionados</td></tr>
+                                    ) : filteredKardexMovements.slice(0, 100).map(m => (
+                                        <tr key={m.id} className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5">
+                                            <td className="py-3 px-2 text-xs text-gray-500 whitespace-nowrap">
+                                                {new Date(m.createdAt).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                                <br /><span className="text-gray-400">{new Date(m.createdAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </td>
+                                            <td className="py-3 px-2 text-xs">
+                                                <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium">
+                                                    {m.branchName || m.branchId}
                                                 </span>
                                             </td>
-                                            <td className="py-3 px-2 text-right flex justify-end gap-2">
-                                                <button onClick={() => { setEditingProduct(p); setShowProductModal(true); }} className="p-1 hover:text-purple-600"><Edit2 size={16} /></button>
-                                                <button onClick={() => onDeleteProduct(p.id)} className="p-1 hover:text-red-600"><Trash2 size={16} /></button>
+                                            <td className="py-3 px-2">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.type === 'ENTRADA' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                    m.type === 'SALIDA' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                        m.type === 'TRANSFERENCIA' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                    }`}>
+                                                    {m.type}
+                                                </span>
                                             </td>
+                                            <td className="py-3 px-2 font-medium dark:text-white">{m.productName}</td>
+                                            <td className="py-3 px-2 text-center">
+                                                <span className={`font-bold ${m.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {m.quantity > 0 ? '+' : ''}{m.quantity}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-2 text-center text-gray-500">{m.previousStock}</td>
+                                            <td className="py-3 px-2 text-center font-medium dark:text-white">{m.newStock}</td>
+                                            <td className="py-3 px-2 text-xs text-gray-500 max-w-[200px] truncate">{m.reason}</td>
+                                            <td className="py-3 px-2 text-xs text-gray-500">{m.userName || m.userId}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -596,53 +848,76 @@ export const AdminDashboard: React.FC = () => {
                 )}
             </div>
 
-            {/* Product Modal */}
+            {/* Product Modal - Multi Image Support */}
             {showProductModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <GlassCard className="w-full max-w-lg p-6 bg-white dark:bg-[#1a1a1a]">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+                    <GlassCard className="w-full max-w-2xl p-6 bg-white dark:bg-[#1a1a1a] my-8">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold dark:text-white">{editingProduct ? 'Editar' : 'Nuevo'} Producto</h3>
-                            <button onClick={() => setShowProductModal(false)}><X size={24} /></button>
+                            <button onClick={() => setShowProductModal(false)}><X size={24} className="dark:text-white" /></button>
                         </div>
                         <form onSubmit={handleSaveProduct} className="space-y-4">
-                            <input
-                                className="w-full p-2 border rounded-lg dark:bg-white/5"
-                                placeholder="Nombre"
-                                value={productForm.name}
-                                onChange={e => setProductForm({ ...productForm, name: e.target.value })}
-                                required
-                            />
                             <div className="grid grid-cols-2 gap-4">
-                                <input
-                                    className="w-full p-2 border rounded-lg dark:bg-white/5"
-                                    placeholder="Precio"
-                                    type="number"
-                                    value={productForm.price}
-                                    onChange={e => setProductForm({ ...productForm, price: e.target.value })}
-                                    required
-                                />
-                                <input
-                                    className="w-full p-2 border rounded-lg dark:bg-white/5"
-                                    placeholder="Stock"
-                                    type="number"
-                                    value={productForm.stock}
-                                    onChange={e => setProductForm({ ...productForm, stock: e.target.value })}
-                                    required
-                                />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Nombre *" value={productForm.name} onChange={e => setProductForm({ ...productForm, name: e.target.value })} required />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Marca" value={productForm.brand} onChange={e => setProductForm({ ...productForm, brand: e.target.value })} />
                             </div>
-                            <input
-                                className="w-full p-2 border rounded-lg dark:bg-white/5"
-                                placeholder="Categoría"
-                                value={productForm.category}
-                                onChange={e => setProductForm({ ...productForm, category: e.target.value })}
-                            />
-                            <input
-                                className="w-full p-2 border rounded-lg dark:bg-white/5"
-                                placeholder="URL Imagen"
-                                value={productForm.image}
-                                onChange={e => setProductForm({ ...productForm, image: e.target.value })}
-                            />
-                            <button type="submit" className="w-full py-2 bg-purple-600 text-white rounded-lg font-bold">Guardar</button>
+                            <div className="grid grid-cols-3 gap-4">
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Precio *" type="number" step="0.01" value={productForm.price} onChange={e => setProductForm({ ...productForm, price: e.target.value })} required />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Costo" type="number" step="0.01" value={productForm.cost} onChange={e => setProductForm({ ...productForm, cost: e.target.value })} />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Stock *" type="number" value={productForm.stock} onChange={e => setProductForm({ ...productForm, stock: e.target.value })} required />
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Categoria" value={productForm.category} onChange={e => setProductForm({ ...productForm, category: e.target.value })} />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="SKU" value={productForm.sku} onChange={e => setProductForm({ ...productForm, sku: e.target.value })} />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Descuento %" type="number" value={productForm.discount} onChange={e => setProductForm({ ...productForm, discount: e.target.value })} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Color" value={productForm.color} onChange={e => setProductForm({ ...productForm, color: e.target.value })} />
+                                <input className="w-full p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700" placeholder="Descripcion" value={productForm.description} onChange={e => setProductForm({ ...productForm, description: e.target.value })} />
+                            </div>
+
+                            {/* Multi-Image Section */}
+                            <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <h4 className="text-sm font-bold dark:text-white">Imagenes ({productImages.length}/10)</h4>
+                                    <span className="text-xs text-gray-400">Click en imagen para seleccionar como principal</span>
+                                </div>
+
+                                {/* Image Grid */}
+                                {productImages.length > 0 && (
+                                    <div className="grid grid-cols-5 gap-2">
+                                        {productImages.map((img, idx) => (
+                                            <div key={idx} className={`relative group aspect-square rounded-lg overflow-hidden border-2 cursor-pointer ${idx === mainImageIndex ? 'border-purple-500 ring-2 ring-purple-300' : 'border-gray-200 dark:border-gray-700'}`} onClick={() => setMainImageIndex(idx)}>
+                                                <img src={img} alt={`Img ${idx + 1}`} className="w-full h-full object-cover" />
+                                                {idx === mainImageIndex && (
+                                                    <div className="absolute top-1 left-1 bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">Principal</div>
+                                                )}
+                                                <button type="button" onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Add Image URL */}
+                                {productImages.length < 10 && (
+                                    <div className="flex gap-2">
+                                        <input
+                                            className="flex-1 p-2 border rounded-lg dark:bg-white/5 dark:text-white dark:border-gray-700 text-sm"
+                                            placeholder="URL de imagen..."
+                                            value={newImageUrl}
+                                            onChange={e => setNewImageUrl(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddImage(); } }}
+                                        />
+                                        <button type="button" onClick={handleAddImage} className="px-3 py-2 bg-gray-100 dark:bg-white/10 rounded-lg text-sm font-medium dark:text-white hover:bg-gray-200 dark:hover:bg-white/20">
+                                            <Plus size={16} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button type="submit" className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors">Guardar Producto</button>
                         </form>
                     </GlassCard>
                 </div>
