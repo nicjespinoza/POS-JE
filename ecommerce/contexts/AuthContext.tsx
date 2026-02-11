@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { auth, db, doc, getDoc, setDoc, onAuthStateChanged } from '../lib/firebase';
 import { User } from 'firebase/auth';
 import { UserProfile, Role } from '../lib/types';
@@ -143,6 +143,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { console.error("Error syncing profile:", e); }
                     }
 
+                    // --- STEP 5: MARK ONLINE ---
+                    try {
+                        await setDoc(userRef, {
+                            isOnline: true,
+                            lastSeen: new Date().toISOString()
+                        }, { merge: true });
+                    } catch (e) { /* non-critical */ }
+
                     setUserProfile(profileData);
 
                 } catch (error) {
@@ -159,7 +167,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => unsubscribe();
     }, []);
 
+    // Heartbeat: update lastSeen every 60s while online
+    const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        if (user && userProfile) {
+            const userRef = doc(db, 'users', user.uid);
+
+            // Start heartbeat
+            heartbeatRef.current = setInterval(async () => {
+                try {
+                    await setDoc(userRef, { lastSeen: new Date().toISOString(), isOnline: true }, { merge: true });
+                } catch { /* non-critical */ }
+            }, 60000); // every 60s
+
+            // Mark offline on tab close
+            const handleBeforeUnload = () => {
+                // Use sendBeacon for reliability on page close
+                // Fallback: the heartbeat will stop and isOnline can be inferred from lastSeen
+                try {
+                    setDoc(userRef, { isOnline: false, lastSeen: new Date().toISOString() }, { merge: true });
+                } catch { /* best effort */ }
+            };
+            window.addEventListener('beforeunload', handleBeforeUnload);
+
+            return () => {
+                if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+                window.removeEventListener('beforeunload', handleBeforeUnload);
+            };
+        }
+    }, [user, userProfile]);
+
     const logout = async () => {
+        // Mark offline before signing out
+        if (user) {
+            try {
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, { isOnline: false, lastSeen: new Date().toISOString() }, { merge: true });
+            } catch { /* non-critical */ }
+        }
         await auth.signOut();
     };
 

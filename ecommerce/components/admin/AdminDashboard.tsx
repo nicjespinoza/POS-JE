@@ -49,7 +49,7 @@ import { useData } from '../../providers/DataProvider';
 import { analyzeBusinessData } from '../../services/geminiService';
 import { ALL_PERMISSIONS } from '../../lib/constants';
 import { Transaction, Product, Role, TransactionType, UserProfile, RoleDefinition, Permission } from '../../lib/types';
-import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc, writeBatch } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc, writeBatch, onSnapshot, query as firestoreQuery } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { InventoryItem, InventoryMovement, MovementType, Branch } from '../../lib/types';
 import { getInventoryByBranch, getInventoryMovements, createInventorySummary } from '../../services/inventoryService';
@@ -113,6 +113,10 @@ export const AdminDashboard: React.FC = () => {
     const [aiInsight, setAiInsight] = useState<string>('');
     const [analyzing, setAnalyzing] = useState(false);
 
+    // Online Users State
+    interface OnlineUser { uid: string; email: string; displayName: string; role: string; isOnline: boolean; lastSeen: string; branchId?: string | null; }
+    const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+
     // Product Form State
     const [productForm, setProductForm] = useState({
         name: '',
@@ -130,6 +134,33 @@ export const AdminDashboard: React.FC = () => {
     const [productImages, setProductImages] = useState<string[]>([]);
     const [mainImageIndex, setMainImageIndex] = useState(0);
     const [newImageUrl, setNewImageUrl] = useState('');
+
+    // Real-time listener for online users
+    useEffect(() => {
+        if (!isAdmin && !isManager) return;
+        const q = firestoreQuery(collection(db, 'users'));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const users: OnlineUser[] = [];
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.email && data.role && data.role !== 'GUEST') {
+                    const lastSeen = data.lastSeen ? new Date(data.lastSeen) : null;
+                    const isRecentlyOnline = lastSeen ? (Date.now() - lastSeen.getTime()) < 120000 : false; // 2 min threshold
+                    users.push({
+                        uid: doc.id,
+                        email: data.email,
+                        displayName: data.displayName || data.email,
+                        role: data.role,
+                        isOnline: data.isOnline === true && isRecentlyOnline,
+                        lastSeen: data.lastSeen || '',
+                        branchId: data.branchId || null
+                    });
+                }
+            });
+            setOnlineUsers(users);
+        }, (err) => console.error('Online users listener error:', err));
+        return () => unsub();
+    }, [isAdmin, isManager]);
 
     useEffect(() => {
         if (editingProduct) {
@@ -487,9 +518,27 @@ export const AdminDashboard: React.FC = () => {
                     <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
                         Panel de Control
                     </h1>
-                    <p className="text-slate-500 dark:text-gray-400 mt-1">
-                        Bienvenido, {userProfile?.displayName || 'Usuario'} | {userProfile?.role}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                        <p className="text-slate-500 dark:text-gray-400">
+                            Bienvenido, {userProfile?.displayName || 'Usuario'} | {userProfile?.role}
+                        </p>
+                    </div>
+                    {/* Online Users Summary */}
+                    {onlineUsers.length > 0 && (
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            {onlineUsers.map((u) => (
+                                <div key={u.uid} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs" title={`${u.email} - ${u.role}${u.branchId ? ' (' + u.branchId + ')' : ''}`}>
+                                    <span className={`inline-flex rounded-full h-2 w-2 ${u.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                                    <span className="text-gray-300">{u.displayName || u.email.split('@')[0]}</span>
+                                    <span className="text-gray-500">{u.role === 'ADMIN' ? 'Admin' : u.branchId || ''}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex gap-3">
