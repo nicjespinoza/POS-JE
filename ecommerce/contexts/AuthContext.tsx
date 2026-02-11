@@ -33,14 +33,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let cancelled = false;
+
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (cancelled) return;
             setUser(firebaseUser);
 
             if (firebaseUser?.email) {
+                // Reset loading so pages show "Cargando..." while we fetch the profile
+                setLoading(true);
                 try {
                     // Ensure the auth token is available (no force-refresh to avoid
                     // network failures). The SDK caches the token from sign-in.
                     await firebaseUser.getIdToken();
+                    if (cancelled) return;
 
                     const email = firebaseUser.email.toLowerCase();
                     const userRef = doc(db, 'users', firebaseUser.uid);
@@ -58,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 500));
                         }
                     }
+                    if (cancelled) return;
 
                     if (!userDoc || !userDoc.exists()) {
                         // Determine bootstrap role from email (hardcoded known admins)
@@ -169,36 +176,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         }, { merge: true });
                     } catch (e) { /* non-critical */ }
 
-                    setUserProfile(profileData);
+                    if (!cancelled) setUserProfile(profileData);
 
                 } catch (error) {
                     console.error("[AuthContext] Auth flow error:", error);
-                    // LAST RESORT: build a minimal profile from the firebase user
-                    // so the app doesn't redirect to login when the user IS signed in.
-                    const email = firebaseUser.email!.toLowerCase();
-                    let fallbackRole = Role.GUEST;
-                    let fallbackBranch = '';
-                    if (email === 'admin@webdesignje.com') fallbackRole = Role.ADMIN;
-                    else if (email === 'suc1@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-1'; }
-                    else if (email === 'suc2@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-2'; }
-                    else if (email === 'suc3@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-3'; }
-                    setUserProfile({
-                        uid: firebaseUser.uid,
-                        email: email,
-                        displayName: firebaseUser.displayName || 'Usuario',
-                        role: fallbackRole,
-                        branchId: fallbackBranch || null,
-                        photoURL: firebaseUser.photoURL || null
-                    });
+                    if (!cancelled) {
+                        // LAST RESORT: build a minimal profile from the firebase user
+                        // so the app doesn't redirect to login when the user IS signed in.
+                        const email = firebaseUser.email!.toLowerCase();
+                        let fallbackRole = Role.GUEST;
+                        let fallbackBranch = '';
+                        if (email === 'admin@webdesignje.com') fallbackRole = Role.ADMIN;
+                        else if (email === 'suc1@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-1'; }
+                        else if (email === 'suc2@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-2'; }
+                        else if (email === 'suc3@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-3'; }
+                        setUserProfile({
+                            uid: firebaseUser.uid,
+                            email: email,
+                            displayName: firebaseUser.displayName || 'Usuario',
+                            role: fallbackRole,
+                            branchId: fallbackBranch || null,
+                            photoURL: firebaseUser.photoURL || null
+                        });
+                    }
                 }
             } else {
-                setUserProfile(null);
+                if (!cancelled) setUserProfile(null);
             }
 
-            setLoading(false);
+            if (!cancelled) setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            cancelled = true;
+            unsubscribe();
+        };
     }, []);
 
     // Heartbeat: update lastSeen every 60s while online

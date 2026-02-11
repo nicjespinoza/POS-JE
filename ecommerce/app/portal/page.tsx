@@ -37,6 +37,14 @@ export default function StaffPortalScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [loginError, setLoginError] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
+
+    // Wait for AuthContext to finish loading the profile before navigating
+    useEffect(() => {
+        if (pendingRedirect && authContext.userProfile && !authContext.loading) {
+            router.push(pendingRedirect);
+        }
+    }, [pendingRedirect, authContext.userProfile, authContext.loading, router]);
 
     useEffect(() => {
         checkAccess();
@@ -111,15 +119,12 @@ export default function StaffPortalScreen() {
             const { auth } = await import('../../lib/firebase');
 
             await signInWithEmailAndPassword(auth, email, pass);
-            // Login successful
-
-            // Redirect based on selected role / branch Logic
-            // In a real app we would verify user claims match the selected button.
-            // For now, simple redirect.
+            // Login successful — don't navigate immediately!
+            // Wait for AuthContext to finish loading the profile first.
             if (selectedRole === 'admin') {
-                router.push('/admin');
+                setPendingRedirect('/admin');
             } else {
-                router.push('/pos');
+                setPendingRedirect('/pos');
             }
         } catch (err: any) {
             // Login failed

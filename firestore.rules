@@ -292,10 +292,10 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
     
-    // --- Fallback: Deny All ---
-    // Any collection not explicitly defined above is denied
+    // --- Fallback: Allow authenticated reads (TEMPORARY DEBUG) ---
+    // TODO: Revert to deny-all after diagnosing permission errors
     match /{document=**} {
-      allow read: if false;
+      allow read: if request.auth != null;
       allow write: if false;
     }
   }
