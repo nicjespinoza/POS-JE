@@ -250,6 +250,25 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // --- Financial Summaries (pre-aggregated by Cloud Functions) ---
+    match /financial_summaries/{summaryId} {
+      allow read: if isAuthenticated() && isManager();
+      // Only Cloud Functions can write (admin SDK bypasses rules)
+      allow create, update, delete: if false;
+    }
+
+    // --- Inventory Valuations (pre-aggregated by Cloud Functions) ---
+    match /inventory_valuations/{valuationId} {
+      allow read: if isAuthenticated() && isManager();
+      allow create, update, delete: if false;
+    }
+
+    // --- Archived Inventory Batches (moved by Cloud Functions) ---
+    match /inventory_batches_archive/{batchId} {
+      allow read: if isAuthenticated() && isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // --- Audit Logs ---
     match /audit_logs/{logId} {
       allow read: if isAuthenticated() && (

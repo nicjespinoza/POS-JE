@@ -53,6 +53,7 @@ import { doc, updateDoc, deleteDoc, addDoc, collection, setDoc, writeBatch } fro
 import { db } from '../../lib/firebase';
 import { InventoryItem, InventoryMovement, MovementType, Branch } from '../../lib/types';
 import { getInventoryByBranch, getInventoryMovements, createInventorySummary } from '../../services/inventoryService';
+import { VirtualTable, Column } from '../ui/VirtualTable';
 
 // Helper for sorting
 type SortKey = 'date' | 'amount' | 'category' | 'description' | 'type';
@@ -794,62 +795,62 @@ export const AdminDashboard: React.FC = () => {
                             </div>
                         </GlassCard>
 
-                        {/* Kardex Table */}
-                        <GlassCard className="p-6 overflow-x-auto">
+                        {/* Kardex Table (Virtualized) */}
+                        <GlassCard className="p-6">
                             <h3 className="text-lg font-bold mb-4 dark:text-white flex items-center gap-2">
                                 <Calendar size={20} className="text-purple-500" /> Movimientos de Inventario (Kardex)
                             </h3>
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr className="border-b dark:border-white/10 text-slate-500 text-xs uppercase">
-                                        <th className="py-3 px-2">Fecha</th>
-                                        <th className="py-3 px-2">Sucursal</th>
-                                        <th className="py-3 px-2">Tipo</th>
-                                        <th className="py-3 px-2">Producto</th>
-                                        <th className="py-3 px-2 text-center">Cantidad</th>
-                                        <th className="py-3 px-2 text-center">Anterior</th>
-                                        <th className="py-3 px-2 text-center">Nuevo</th>
-                                        <th className="py-3 px-2">Motivo</th>
-                                        <th className="py-3 px-2">Usuario</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredKardexMovements.length === 0 ? (
-                                        <tr><td colSpan={9} className="py-8 text-center text-gray-400">Sin movimientos para los filtros seleccionados</td></tr>
-                                    ) : filteredKardexMovements.slice(0, 100).map(m => (
-                                        <tr key={m.id} className="border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5">
-                                            <td className="py-3 px-2 text-xs text-gray-500 whitespace-nowrap">
+                            <VirtualTable<InventoryMovement>
+                                data={filteredKardexMovements}
+                                rowHeight={56}
+                                maxHeight={600}
+                                emptyMessage="Sin movimientos para los filtros seleccionados"
+                                columns={[
+                                    {
+                                        key: 'date', header: 'Fecha', width: '12%',
+                                        render: (m) => (
+                                            <div className="text-xs text-gray-500 whitespace-nowrap">
                                                 {new Date(m.createdAt).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' })}
                                                 <br /><span className="text-gray-400">{new Date(m.createdAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </td>
-                                            <td className="py-3 px-2 text-xs">
-                                                <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium">
-                                                    {m.branchName || m.branchId}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-2">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.type === 'ENTRADA' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                    m.type === 'SALIDA' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                                        m.type === 'TRANSFERENCIA' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                                            'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                    }`}>
-                                                    {m.type}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-2 font-medium dark:text-white">{m.productName}</td>
-                                            <td className="py-3 px-2 text-center">
-                                                <span className={`font-bold ${m.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {m.quantity > 0 ? '+' : ''}{m.quantity}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-2 text-center text-gray-500">{m.previousStock}</td>
-                                            <td className="py-3 px-2 text-center font-medium dark:text-white">{m.newStock}</td>
-                                            <td className="py-3 px-2 text-xs text-gray-500 max-w-[200px] truncate">{m.reason}</td>
-                                            <td className="py-3 px-2 text-xs text-gray-500">{m.userName || m.userId}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                            </div>
+                                        )
+                                    },
+                                    {
+                                        key: 'branch', header: 'Sucursal', width: '12%',
+                                        render: (m) => (
+                                            <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium text-xs">
+                                                {m.branchName || m.branchId}
+                                            </span>
+                                        )
+                                    },
+                                    {
+                                        key: 'type', header: 'Tipo', width: '11%',
+                                        render: (m) => (
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.type === 'ENTRADA' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                m.type === 'SALIDA' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                    m.type === 'TRANSFERENCIA' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                        'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                            }`}>{m.type}</span>
+                                        )
+                                    },
+                                    {
+                                        key: 'product', header: 'Producto', width: '16%',
+                                        render: (m) => <span className="font-medium dark:text-white">{m.productName}</span>
+                                    },
+                                    {
+                                        key: 'qty', header: 'Cantidad', width: '9%',
+                                        render: (m) => (
+                                            <span className={`font-bold ${m.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                {m.quantity > 0 ? '+' : ''}{m.quantity}
+                                            </span>
+                                        )
+                                    },
+                                    { key: 'prev', header: 'Anterior', width: '8%', render: (m) => <span className="text-gray-500">{m.previousStock}</span> },
+                                    { key: 'new', header: 'Nuevo', width: '8%', render: (m) => <span className="font-medium dark:text-white">{m.newStock}</span> },
+                                    { key: 'reason', header: 'Motivo', width: '16%', render: (m) => <span className="text-xs text-gray-500 truncate">{m.reason}</span> },
+                                    { key: 'user', header: 'Usuario', width: '8%', render: (m) => <span className="text-xs text-gray-500">{m.userName || m.userId}</span> },
+                                ]}
+                            />
                         </GlassCard>
                     </div>
                 ) : (
