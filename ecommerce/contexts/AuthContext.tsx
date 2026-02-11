@@ -38,24 +38,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (firebaseUser?.email) {
                 try {
-                    // Force the auth token to be fresh so Firestore SDK recognises
-                    // the user as authenticated before any reads/writes.
-                    await firebaseUser.getIdToken(true);
+                    // Ensure the auth token is available (no force-refresh to avoid
+                    // network failures). The SDK caches the token from sign-in.
+                    await firebaseUser.getIdToken();
 
                     const email = firebaseUser.email.toLowerCase();
                     const userRef = doc(db, 'users', firebaseUser.uid);
 
-                    // --- STEP 0: BOOTSTRAP users/{uid} if it doesn't exist ---
-                    // This MUST happen first because Firestore rules use users/{uid}
-                    // to determine role. Without it, all other reads fail.
-                    // The users rule allows read to any authenticated user, and
-                    // create if request.auth.uid == userId.
-                    let userDoc;
-                    try {
-                        userDoc = await getDoc(userRef);
-                    } catch (e) {
-                        console.warn("Could not read user doc, will try to create:", e);
-                        userDoc = null;
+                    // --- STEP 0: READ OR CREATE users/{uid} ---
+                    // Retry logic: Firestore SDK may not have synced the auth
+                    // token to its WebChannel yet when onAuthStateChanged fires.
+                    let userDoc: any = null;
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            userDoc = await getDoc(userRef);
+                            break; // success
+                        } catch (e) {
+                            console.warn(`[AuthContext] getDoc attempt ${attempt}/3 failed:`, (e as any)?.code);
+                            if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 500));
+                        }
                     }
 
                     if (!userDoc || !userDoc.exists()) {
@@ -67,15 +68,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         else if (email === 'suc2@webdesignje.com') { bootstrapRole = 'MANAGER'; bootstrapBranch = 'suc-2'; }
                         else if (email === 'suc3@webdesignje.com') { bootstrapRole = 'MANAGER'; bootstrapBranch = 'suc-3'; }
 
-                        await setDoc(userRef, {
-                            uid: firebaseUser.uid,
-                            email: email,
-                            displayName: firebaseUser.displayName || 'Usuario',
-                            role: bootstrapRole,
-                            branchId: bootstrapBranch,
-                            photoURL: firebaseUser.photoURL || null
-                        });
-                        userDoc = await getDoc(userRef);
+                        try {
+                            await setDoc(userRef, {
+                                uid: firebaseUser.uid,
+                                email: email,
+                                displayName: firebaseUser.displayName || 'Usuario',
+                                role: bootstrapRole,
+                                branchId: bootstrapBranch,
+                                photoURL: firebaseUser.photoURL || null
+                            });
+                            userDoc = await getDoc(userRef);
+                        } catch (createErr) {
+                            console.warn('[AuthContext] bootstrap setDoc failed:', (createErr as any)?.code);
+                        }
                     }
 
                     // --- STEP 1: ACCESS CONTROL CHECK ---
@@ -107,7 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 });
                                 accessDoc = await getDoc(accessRef);
                             } catch (e) {
-                                console.error("Seed failed (likely rules):", e);
+                                console.warn("[AuthContext] access_users seed failed (rules):", (e as any)?.code);
                             }
                         }
                     }
@@ -115,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // --- STEP 3: DETERMINE EFFECTIVE ROLE ---
                     let assignedRole = Role.GUEST;
                     let assignedBranch = '';
+                    const userDocData = userDoc?.data?.() || null;
 
                     if (accessDoc && accessDoc.exists()) {
                         const accessData = accessDoc.data();
@@ -123,13 +129,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         else if (accessData.role === 'SUC2') { assignedRole = Role.MANAGER; assignedBranch = 'suc-2'; }
                         else if (accessData.role === 'SUC3') { assignedRole = Role.MANAGER; assignedBranch = 'suc-3'; }
                         else if (accessData.role === 'CASHIER') assignedRole = Role.CASHIER;
-                    } else {
+                    } else if (userDocData) {
                         // Fallback: use role from users doc if access_users not available
-                        const existingRole = userDoc.data()?.role;
+                        const existingRole = userDocData.role;
                         if (existingRole === 'ADMIN') assignedRole = Role.ADMIN;
                         else if (existingRole === 'MANAGER') assignedRole = Role.MANAGER;
                         else if (existingRole === 'CASHIER') assignedRole = Role.CASHIER;
-                        assignedBranch = userDoc.data()?.branchId || '';
+                        assignedBranch = userDocData.branchId || '';
+                    } else {
+                        // Last resort: derive role from email when Firestore is unreachable
+                        if (email === 'admin@webdesignje.com') assignedRole = Role.ADMIN;
+                        else if (email.startsWith('suc') && email.endsWith('@webdesignje.com')) {
+                            assignedRole = Role.MANAGER;
+                            const num = email.replace('suc', '').split('@')[0];
+                            assignedBranch = `suc-${num}`;
+                        }
                     }
 
                     // --- STEP 4: SYNC TO USER PROFILE ---
@@ -138,13 +152,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         email: email,
                         displayName: firebaseUser.displayName || 'Usuario',
                         role: assignedRole,
-                        branchId: assignedBranch || userDoc.data()?.branchId || null,
+                        branchId: assignedBranch || userDocData?.branchId || null,
                         photoURL: firebaseUser.photoURL || null
                     };
 
-                    // Only update DB if role changed
-                    if (userDoc.data()?.role !== assignedRole) {
-                        try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { console.error("Error syncing profile:", e); }
+                    // Only update DB if role changed and we have a valid doc
+                    if (userDocData && userDocData.role !== assignedRole) {
+                        try { await setDoc(userRef, profileData, { merge: true }); } catch (e) { /* non-critical */ }
                     }
 
                     // --- STEP 5: MARK ONLINE ---
@@ -158,8 +172,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setUserProfile(profileData);
 
                 } catch (error) {
-                    console.error("Auth error:", error);
-                    setUserProfile(null);
+                    console.error("[AuthContext] Auth flow error:", error);
+                    // LAST RESORT: build a minimal profile from the firebase user
+                    // so the app doesn't redirect to login when the user IS signed in.
+                    const email = firebaseUser.email!.toLowerCase();
+                    let fallbackRole = Role.GUEST;
+                    let fallbackBranch = '';
+                    if (email === 'admin@webdesignje.com') fallbackRole = Role.ADMIN;
+                    else if (email === 'suc1@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-1'; }
+                    else if (email === 'suc2@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-2'; }
+                    else if (email === 'suc3@webdesignje.com') { fallbackRole = Role.MANAGER; fallbackBranch = 'suc-3'; }
+                    setUserProfile({
+                        uid: firebaseUser.uid,
+                        email: email,
+                        displayName: firebaseUser.displayName || 'Usuario',
+                        role: fallbackRole,
+                        branchId: fallbackBranch || null,
+                        photoURL: firebaseUser.photoURL || null
+                    });
                 }
             } else {
                 setUserProfile(null);
