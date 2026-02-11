@@ -18,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased bg-black text-white">
+      <body className="antialiased bg-black text-white" suppressHydrationWarning>
         <AuthProvider>
           <DataProvider>
             <CartProvider>
