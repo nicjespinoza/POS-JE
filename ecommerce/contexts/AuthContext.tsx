@@ -44,9 +44,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // --- STEP 0: BOOTSTRAP users/{uid} if it doesn't exist ---
                     // This MUST happen first because Firestore rules use users/{uid}
                     // to determine role. Without it, all other reads fail.
-                    // The users rule allows create if request.auth.uid == userId.
-                    let userDoc = await getDoc(userRef);
-                    if (!userDoc.exists()) {
+                    // The users rule allows read to any authenticated user, and
+                    // create if request.auth.uid == userId.
+                    let userDoc;
+                    try {
+                        userDoc = await getDoc(userRef);
+                    } catch (e) {
+                        console.warn("Could not read user doc, will try to create:", e);
+                        userDoc = null;
+                    }
+
+                    if (!userDoc || !userDoc.exists()) {
                         // Determine bootstrap role from email (hardcoded known admins)
                         let bootstrapRole = 'GUEST';
                         let bootstrapBranch: string | null = null;

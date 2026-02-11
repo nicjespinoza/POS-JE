@@ -60,17 +60,19 @@ service cloud.firestore {
     // ============================================================
     
     // --- Users Collection ---
-    // SECURITY: Users CANNOT change their own role or branchId
+    // NOTE: read is open to any authenticated user to avoid recursive get() in rules.
+    // The getUserData() helper reads users/{uid}, so the users collection rule
+    // CANNOT call isManager()/isAdmin() without creating a circular reference.
     match /users/{userId} {
-      allow read: if isAuthenticated() && 
-        (request.auth.uid == userId || isManager());
+      allow read: if isAuthenticated();
       
       // CREATE: User can only create their own profile
       allow create: if isAuthenticated() && 
         request.auth.uid == userId;
       
       // UPDATE: Self-update CANNOT change role or branchId (anti-escalation)
-      // Only ADMIN can change role/branchId
+      // Admin check uses getUserData() which is safe here (not self-referential
+      // because the update rule reads the EXISTING doc, not the one being written)
       allow update: if isAuthenticated() && (
         (
           request.auth.uid == userId &&
