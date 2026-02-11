@@ -441,6 +441,14 @@ export default function SetupDbPage() {
         setStatus('Iniciando configuracion...');
 
         try {
+            // 0. ADMIN PROFILE FIRST — Firestore rules need users/{uid} with role=ADMIN
+            await setDoc(doc(db, 'users', user.uid), {
+                uid: user.uid, email: user.email,
+                displayName: user.displayName || 'Admin',
+                role: 'ADMIN', branchId: null, photoURL: user.photoURL || null
+            }, { merge: true });
+            log('Perfil admin creado (paso 0 - requerido por reglas Firestore)');
+
             // 1. Access Users
             const users = [
                 { email: 'admin@webdesignje.com', role: 'ADMIN', branchId: null },
@@ -516,23 +524,16 @@ export default function SetupDbPage() {
                         previousStock: 0,
                         newStock: branchStock,
                         reason: 'Inventario inicial - Seed',
-                        userId: 'system-seed',
-                        userName: 'Sistema',
+                        userId: user.uid,
+                        userName: user.displayName || 'Admin',
                         createdAt: new Date().toISOString()
                     });
                 }
                 log(`Producto: ${product.name} + inventario en 3 sucursales`);
             }
 
-            // 4. Admin profile sync
-            if (user.email === 'admin@webdesignje.com') {
-                await setDoc(doc(db, 'users', user.uid), {
-                    uid: user.uid, email: user.email,
-                    displayName: user.displayName || 'Admin',
-                    role: 'ADMIN', photoURL: user.photoURL
-                }, { merge: true });
-                log('Perfil admin sincronizado.');
-            }
+            // 4. Admin profile already created in step 0
+            log('Perfil admin ya sincronizado (paso 0).');
 
             log('\nEXITO! Base de datos inicializada con:');
             log(`- ${SEED_PRODUCTS.length} productos`);

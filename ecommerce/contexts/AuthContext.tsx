@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         displayName: firebaseUser.displayName || 'Usuario',
                         role: assignedRole,
                         branchId: assignedBranch || userDoc.data()?.branchId || null, // Use null instead of undefined
-                        photoURL: firebaseUser.photoURL || undefined
+                        photoURL: firebaseUser.photoURL || null
                     };
 
                     // Only update DB if changed to avoid unnecessary writes

@@ -20,8 +20,8 @@ export interface UserProfile {
     email: string;
     displayName?: string;
     role: Role;
-    branchId?: string; // If null, maybe global admin or unassigned
-    photoURL?: string;
+    branchId?: string | null; // If null, maybe global admin or unassigned
+    photoURL?: string | null;
 }
 
 export enum TransactionType {

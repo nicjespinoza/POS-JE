@@ -189,12 +189,13 @@ service cloud.firestore {
         resource.data.branchId == getUserBranchId()
       );
       // Cashier+ can create movements for their own branch
-      // Must include required fields and userId must match auth
-      allow create: if isCashier() && (
-        isAdmin() || 
-        request.resource.data.branchId == getUserBranchId()
-      ) && request.resource.data.keys().hasAll(['productId', 'branchId', 'type', 'quantity', 'userId']) &&
-        request.resource.data.userId == request.auth.uid;
+      // Must include required fields and userId must match auth (admin exempt)
+      allow create: if isCashier() && 
+        request.resource.data.keys().hasAll(['productId', 'branchId', 'type', 'quantity', 'userId']) &&
+        (
+          isAdmin() || 
+          (request.resource.data.branchId == getUserBranchId() && request.resource.data.userId == request.auth.uid)
+        );
       
       // Movements are immutable once created (audit integrity)
       allow update, delete: if false;
