@@ -23,13 +23,16 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-is": "^18.2.0",
-    "recharts": "^3.5.1"
+    "react-window": "^2.2.6",
+    "recharts": "^3.5.1",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@firebase/rules-unit-testing": "^4.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.14.0",
+    "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react": "^5.0.0",
     "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^7.0.1",

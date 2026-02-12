@@ -1,9 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { GlassCard } from './ui/GlassCard';
 import { Product, CartItem, Transaction, TransactionType } from '../types';
 import { Search, ShoppingBag, Plus, Minus, Trash2, CreditCard, LogOut, Sun, Moon, Globe, PackagePlus, X, Calculator as CalcIcon, Delete, AlertTriangle, CheckCircle2, Edit2, Filter, Banknote, Landmark, Image as ImageIcon, LayoutGrid, ArrowUp, ArrowDown, Columns, Smartphone, Package, Save, Printer, History, Calendar, DollarSign, Box, ArrowLeft, FileText, TrendingUp, Eye } from 'lucide-react';
 import { CURRENCIES } from '../constants';
+import { VirtualProductGrid } from './VirtualProductGrid';
 
 interface POSProps {
   products: Product[];
@@ -490,6 +491,89 @@ export const POS: React.FC<POSProps> = ({
     }
   };
 
+  // [SCALABILITY] Product card renderer for VirtualProductGrid
+  const renderProductCard = useCallback((product: Product) => {
+    const isLowStock = product.stock < lowStockThreshold && product.stock > 0;
+    const isOutOfStock = product.stock <= 0;
+
+    return (
+      <GlassCard
+        onClick={() => {
+          if (!isOutOfStock) {
+            setViewingProduct(product);
+          }
+        }}
+        className={`group relative overflow-hidden border-0 cursor-pointer transition-all duration-200 hover:bg-white/60 dark:hover:bg-white/10 h-full
+               ${isOutOfStock ? 'opacity-60 grayscale cursor-not-allowed' : ''}
+               ${isLowStock ? 'ring-2 ring-amber-400/50 dark:ring-amber-500/50 bg-amber-50/50 dark:bg-amber-900/10' : ''}
+               ${layoutConfig.density === 'compact' ? 'p-2' : layoutConfig.density === 'comfortable' ? 'p-6' : 'p-4'}
+            `}
+      >
+        {isLowStock && !isOutOfStock && (
+          <div className="absolute top-2 right-2 z-10 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg">
+            BAJO STOCK
+          </div>
+        )}
+
+        <div className="flex flex-col h-full">
+          {layoutConfig.elementOrder.map((element, idx) => {
+            if (element === 'image') {
+              return (
+                <div key={idx} className="aspect-square w-full overflow-hidden rounded-xl mb-3 relative bg-gray-100 dark:bg-white/5">
+                  <ProductCardImage src={product.image} alt={product.name} isOutOfStock={isOutOfStock} />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingProduct(product); }}
+                    className="absolute top-2 left-2 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  {!isOutOfStock && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); addToCart(product); }}
+                      className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-900 dark:text-white shadow-lg z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      title="Agregar directamente"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  )}
+                  {isOutOfStock && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                      <span className="text-white font-bold tracking-widest text-sm border-2 border-white px-3 py-1">AGOTADO</span>
+                    </div>
+                  )}
+                </div>
+              );
+            } else if (element === 'name') {
+              return (
+                <h3 key={idx} className="font-semibold text-slate-900 dark:text-white text-lg leading-tight mb-1 truncate px-1">
+                  {product.name}
+                </h3>
+              );
+            } else if (element === 'meta') {
+              return (
+                <div key={idx} className="flex justify-between items-center mb-2 px-1">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-md border ${getCategoryColor(product.category)}`}>
+                    {product.category}
+                  </span>
+                  <span className={`text-xs ${isLowStock ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-500 dark:text-gray-400'}`}>
+                    Stock: {product.stock}
+                  </span>
+                </div>
+              );
+            } else if (element === 'price') {
+              return (
+                <div key={idx} className="mt-auto font-bold text-slate-900 dark:text-white px-1 pb-1">
+                  {currency.symbol}{product.price.toFixed(2)}
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      </GlassCard>
+    );
+  }, [lowStockThreshold, layoutConfig, currency.symbol, getCategoryColor, addToCart]);
+
   const handleAddProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newProduct.name && newProduct.price) {
@@ -889,106 +973,19 @@ export const POS: React.FC<POSProps> = ({
               </div>
             </GlassCard>
 
-            {/* Product Grid */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-              <div className={`grid gap-4 pb-20 md:pb-0`} style={{ gridTemplateColumns: `repeat(${layoutConfig.columns}, minmax(0, 1fr))` }}>
-                {filteredProducts.map(product => {
-                  const isLowStock = product.stock < lowStockThreshold && product.stock > 0;
-                  const isOutOfStock = product.stock <= 0;
-
-                  return (
-                    <GlassCard
-                      key={product.id}
-                      onClick={() => {
-                        if (!isOutOfStock) {
-                          // Instead of adding immediately, open quick view
-                          setViewingProduct(product);
-                        }
-                      }}
-                      className={`group relative overflow-hidden border-0 cursor-pointer transition-all duration-200 hover:bg-white/60 dark:hover:bg-white/10
-                             ${isOutOfStock ? 'opacity-60 grayscale cursor-not-allowed' : ''}
-                             ${isLowStock ? 'ring-2 ring-amber-400/50 dark:ring-amber-500/50 bg-amber-50/50 dark:bg-amber-900/10' : ''}
-                             ${layoutConfig.density === 'compact' ? 'p-2' : layoutConfig.density === 'comfortable' ? 'p-6' : 'p-4'}
-                          `}
-                    >
-                      {isLowStock && !isOutOfStock && (
-                        <div className="absolute top-2 right-2 z-10 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg">
-                          BAJO STOCK
-                        </div>
-                      )}
-
-                      <div className="flex flex-col h-full">
-                        {layoutConfig.elementOrder.map((element, idx) => {
-                          if (element === 'image') {
-                            return (
-                              <div key={idx} className="aspect-square w-full overflow-hidden rounded-xl mb-3 relative bg-gray-100 dark:bg-white/5">
-                                <ProductCardImage src={product.image} alt={product.name} isOutOfStock={isOutOfStock} />
-                                {/* Edit Button */}
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setEditingProduct(product); }}
-                                  className="absolute top-2 left-2 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-
-                                {!isOutOfStock && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      addToCart(product);
-                                    }}
-                                    className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center text-slate-900 dark:text-white shadow-lg z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                                    title="Agregar directamente"
-                                  >
-                                    <Plus size={18} />
-                                  </button>
-                                )}
-                                {isOutOfStock && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                                    <span className="text-white font-bold tracking-widest text-sm border-2 border-white px-3 py-1">AGOTADO</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          } else if (element === 'name') {
-                            return (
-                              <h3 key={idx} className="font-semibold text-slate-900 dark:text-white text-lg leading-tight mb-1 truncate px-1">
-                                {product.name}
-                              </h3>
-                            );
-                          } else if (element === 'meta') {
-                            return (
-                              <div key={idx} className="flex justify-between items-center mb-2 px-1">
-                                <span className={`text-[10px] px-2 py-0.5 rounded-md border ${getCategoryColor(product.category)}`}>
-                                  {product.category}
-                                </span>
-                                <span className={`text-xs ${isLowStock ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-500 dark:text-gray-400'}`}>
-                                  Stock: {product.stock}
-                                </span>
-                              </div>
-                            );
-                          } else if (element === 'price') {
-                            return (
-                              <div key={idx} className="mt-auto font-bold text-slate-900 dark:text-white px-1 pb-1">
-                                {currency.symbol}{product.price.toFixed(2)}
-                              </div>
-                            );
-                          }
-                          return null;
-                        })}
-                      </div>
-                    </GlassCard>
-                  );
-                })}
-
-                {filteredProducts.length === 0 && (
-                  <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 dark:text-gray-600">
-                    <ShoppingBag size={64} className="mb-4 opacity-20" />
-                    <p className="text-lg">No se encontraron productos.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* [SCALABILITY] Virtualized Product Grid - only renders visible cards */}
+            <VirtualProductGrid
+              products={filteredProducts}
+              columns={layoutConfig.columns}
+              density={layoutConfig.density}
+              renderProduct={renderProductCard}
+              emptyMessage={
+                <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 dark:text-gray-600">
+                  <ShoppingBag size={64} className="mb-4 opacity-20" />
+                  <p className="text-lg">No se encontraron productos.</p>
+                </div>
+              }
+            />
           </div>
 
           {/* Sidebar Cart */}

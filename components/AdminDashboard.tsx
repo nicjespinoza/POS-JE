@@ -421,7 +421,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       amount: amountVal,
       description: newExpense.desc,
       category: newExpense.category || categories.expense[0],
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      status: 'COMPLETED'
     });
     setNewExpense({ desc: '', amount: '', category: categories.expense[0] });
     setShowExpenseModal(false);
@@ -442,7 +443,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       amount: amountVal,
       description: newIncome.desc,
       category: newIncome.category || categories.income[0],
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      status: 'COMPLETED'
     });
     setNewIncome({ desc: '', amount: '', category: categories.income[0] });
     setShowIncomeModal(false);

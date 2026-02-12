@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, connectFirestoreEmulator, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, orderBy, limit, Timestamp, runTransaction, serverTimestamp, FieldValue, DocumentData } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, orderBy, limit, Timestamp, runTransaction, serverTimestamp, FieldValue, DocumentData, startAfter, writeBatch } from 'firebase/firestore';
 import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
@@ -67,6 +67,8 @@ export {
   createUserWithEmailAndPassword,
   orderBy,
   limit,
+  startAfter,
+  writeBatch,
   serverTimestamp,
   FieldValue,
   USE_EMULATOR

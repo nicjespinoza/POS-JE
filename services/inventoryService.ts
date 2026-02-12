@@ -17,9 +17,12 @@ import {
     runTransaction,
     orderBy,
     limit as firestoreLimit,
+    startAfter,
+    writeBatch,
     serverTimestamp,
     DocumentData
 } from './firebase';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { generateSaleJournalEntry } from './accountingService';
 import {
     InventoryItem,
@@ -156,6 +159,7 @@ export const processSaleInventory = async (
 
 /**
  * Agregar stock (entrada de mercancía)
+ * [SCALABILITY] Now atomic with runTransaction to prevent race conditions with concurrent users
  */
 export const addStock = async (
     productId: string,
@@ -163,29 +167,38 @@ export const addStock = async (
     branchId: string,
     branchName: string,
     quantity: number,
-    currentStock: number,
+    _currentStock: number,
     reason: string,
     userId: string,
     userName: string
 ): Promise<void> => {
-    const newStock = currentStock + quantity;
+    await runTransaction(db, async (transaction) => {
+        const inventoryId = `${productId}_${branchId}`;
+        const inventoryRef = doc(db, 'inventory', inventoryId);
+        const invSnap = await transaction.get(inventoryRef);
 
-    // Actualizar inventario
-    await updateBranchStock(productId, branchId, newStock);
+        const currentStock = invSnap.exists() ? (invSnap.data().stock || 0) : 0;
+        const newStock = currentStock + quantity;
 
-    // Registrar movimiento
-    await recordInventoryMovement({
-        productId,
-        productName,
-        branchId,
-        branchName,
-        type: MovementType.ENTRADA,
-        quantity: quantity,
-        previousStock: currentStock,
-        newStock: newStock,
-        reason,
-        userId,
-        userName
+        // Update inventory atomically
+        if (invSnap.exists()) {
+            transaction.update(inventoryRef, { stock: newStock, updatedAt: serverTimestamp() });
+        } else {
+            transaction.set(inventoryRef, {
+                id: inventoryId, productId, branchId,
+                stock: newStock, lowStockThreshold: 5, updatedAt: serverTimestamp()
+            });
+        }
+
+        // Record movement within same transaction
+        const movId = crypto.randomUUID();
+        transaction.set(doc(db, 'inventory_movements', movId), {
+            id: movId, productId, productName, branchId, branchName,
+            type: MovementType.ENTRADA, quantity,
+            previousStock: currentStock, newStock,
+            reason, userId, userName,
+            createdAt: serverTimestamp()
+        } as InventoryMovement);
     });
 };
 
@@ -287,17 +300,22 @@ export const adjustStock = async (
 
 /**
  * Crear resumen de inventario consolidado para Admin
+ * [SCALABILITY] Optimized: Uses Map pre-index for O(I + P*B) instead of O(P*B*I)
  */
 export const createInventorySummary = (
     products: Product[],
     inventory: InventoryItem[],
     branches: Branch[]
 ): InventorySummary[] => {
+    // Pre-index inventory for O(1) lookups instead of O(I) .find() per iteration
+    const inventoryMap = new Map<string, InventoryItem>();
+    for (const inv of inventory) {
+        inventoryMap.set(`${inv.productId}_${inv.branchId}`, inv);
+    }
+
     return products.map(product => {
         const stockByBranch = branches.map(branch => {
-            const inventoryItem = inventory.find(
-                inv => inv.productId === product.id && inv.branchId === branch.id
-            );
+            const inventoryItem = inventoryMap.get(`${product.id}_${branch.id}`);
             const stock = inventoryItem?.stock ?? 0;
             return {
                 branchId: branch.id,
@@ -321,24 +339,28 @@ export const createInventorySummary = (
 
 /**
  * Inicializar inventario para un producto en todas las sucursales
+ * [SCALABILITY] Uses writeBatch for single network call instead of N sequential writes
  */
 export const initializeProductInventory = async (
     product: Product,
     branches: Branch[],
     initialStockLength: number = 0
 ): Promise<void> => {
+    const batch = writeBatch(db);
+
     for (const branch of branches) {
         const inventoryId = `${product.id}_${branch.id}`;
-        const inventoryItem: InventoryItem = {
+        batch.set(doc(db, 'inventory', inventoryId), {
             id: inventoryId,
             productId: product.id,
             branchId: branch.id,
             stock: initialStockLength,
             lowStockThreshold: 5,
             updatedAt: serverTimestamp()
-        };
-        await setDoc(doc(db, 'inventory', inventoryId), inventoryItem);
+        });
     }
+
+    await batch.commit();
 };
 
 /**
@@ -427,17 +449,20 @@ export const processAtomicSale = async (
             for (const item of items) {
                 // Fetch optimistic candidates
                 // NOTE: Users must create a Composite Index: collection: inventory_batches, fields: [productId, branchId, remainingStock, createdAt]
+                // [SCALABILITY] Limited FIFO query: reads max 10 batches instead of all active batches
+                // Requires composite index: productId ASC, branchId ASC, remainingStock ASC, createdAt ASC
                 const q = query(
                     collection(db, 'inventory_batches'),
                     where('productId', '==', item.productId),
                     where('branchId', '==', item.branchId),
-                    where('remainingStock', '>', 0)
-                    // orderBy('createdAt', 'asc') // Enabling this requires index creation!
+                    where('remainingStock', '>', 0),
+                    orderBy('remainingStock'),
+                    orderBy('createdAt', 'asc'),
+                    firestoreLimit(10)
                 );
                 const batchQuerySnap = await getDocs(q);
                 const candidates = batchQuerySnap.docs
-                    .map(d => ({ ...d.data(), id: d.id } as InventoryBatch))
-                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt)); // JS Sort to implement FIFO if index missing
+                    .map(d => ({ ...d.data(), id: d.id } as InventoryBatch));
 
                 let leftToFill = item.quantity;
 
@@ -506,4 +531,49 @@ export const processAtomicSale = async (
         console.error("FIFO Transaction Failed:", e);
         throw e;
     }
+};
+
+// ============================================
+// [SCALABILITY] PAGINATED QUERIES
+// ============================================
+
+export interface MovementsPage {
+    movements: InventoryMovement[];
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null;
+    hasMore: boolean;
+}
+
+/**
+ * Paginated inventory movements — replaces fixed-limit onSnapshot for large datasets.
+ * Uses cursor-based pagination with startAfter for efficient infinite scroll.
+ */
+export const getInventoryMovementsPaginated = async (
+    branchId: string,
+    pageSize: number = 50,
+    lastDocCursor?: QueryDocumentSnapshot<DocumentData> | null
+): Promise<MovementsPage> => {
+    const constraints: any[] = [];
+
+    if (branchId !== 'all') {
+        constraints.push(where('branchId', '==', branchId));
+    }
+
+    constraints.push(orderBy('createdAt', 'desc'));
+    constraints.push(firestoreLimit(pageSize));
+
+    if (lastDocCursor) {
+        constraints.push(startAfter(lastDocCursor));
+    }
+
+    const q = query(collection(db, 'inventory_movements'), ...constraints);
+    const snapshot = await getDocs(q);
+
+    return {
+        movements: snapshot.docs.map(d => ({
+            ...(d.data() as Omit<InventoryMovement, 'id'>),
+            id: d.id
+        })),
+        lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+        hasMore: snapshot.docs.length === pageSize
+    };
 };

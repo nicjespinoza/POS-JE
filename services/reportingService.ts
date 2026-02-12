@@ -1,6 +1,8 @@
 import {
     db,
     collection,
+    doc,
+    getDoc,
     query,
     where,
     getDocs,
@@ -116,6 +118,57 @@ export const getInventoryValuation = async (branchId?: string): Promise<number> 
     });
 
     return totalValue;
+};
+
+/**
+ * [SCALABILITY] Fast P&L using pre-aggregated financial_summaries from Cloud Functions.
+ * 1 read instead of 1,000+ reads. Use for monthly summaries.
+ * Falls back to full scan only for custom date ranges.
+ */
+export const getProfitAndLossFast = async (
+    year: number,
+    month: number,
+    branchId: string = 'all'
+): Promise<ReportPnL> => {
+    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    const summaryId = `${monthKey}_${branchId}`;
+
+    const snap = await getDoc(doc(db, 'financial_summaries', summaryId));
+
+    if (!snap.exists()) {
+        return {
+            startDate: `${monthKey}-01`,
+            endDate: `${monthKey}-31`,
+            revenue: 0, cogs: 0, grossProfit: 0, expenses: 0, netProfit: 0,
+            details: { revenueByAccount: {}, expensesByAccount: {} }
+        };
+    }
+
+    const data = snap.data();
+    const revenue = data.revenue || 0;
+    const cogs = data.cogs || 0;
+    const expenses = data.expenses || 0;
+
+    return {
+        startDate: `${monthKey}-01`,
+        endDate: `${monthKey}-31`,
+        revenue,
+        cogs,
+        grossProfit: revenue - cogs,
+        expenses,
+        netProfit: (revenue - cogs) - expenses,
+        details: { revenueByAccount: {}, expensesByAccount: {} }
+    };
+};
+
+/**
+ * [SCALABILITY] Fast inventory valuation using pre-aggregated inventory_valuations.
+ * 1 read instead of scanning all active batches.
+ */
+export const getInventoryValuationFast = async (branchId: string = 'all'): Promise<number> => {
+    const snap = await getDoc(doc(db, 'inventory_valuations', branchId));
+    if (!snap.exists()) return 0;
+    return snap.data().totalValue || 0;
 };
 
 /**

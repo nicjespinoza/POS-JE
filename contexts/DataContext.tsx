@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { db, collection, query, where, onSnapshot, updateDoc, doc, setDoc, orderBy, limit } from '../services/firebase';
 import { processAtomicSale } from '../services/inventoryService';
-import { Product, Transaction, CategoryState, RoleDefinition } from '../types'; // Adjust imports
+import { useProductStore } from '../services/productStore';
+import { Product, Transaction, CategoryState, RoleDefinition, Role } from '../types'; // Adjust imports
 import { MOCK_PRODUCTS, DEFAULT_CATEGORIES, DEFAULT_ROLES } from '../constants'; // Fallbacks
 import { useAuth } from './AuthContext';
 
@@ -35,27 +36,26 @@ const seedData = async () => {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { userProfile } = useAuth();
-    const [products, setProducts] = useState<Product[]>([]);
+    // [SCALABILITY] Products now managed by Zustand store with cache + incremental listeners
+    const products = useProductStore(state => state.products);
+    const productsLoading = useProductStore(state => state.loading);
+    const loadAllProducts = useProductStore(state => state.loadAll);
+    const subscribeToProductChanges = useProductStore(state => state.subscribeToChanges);
+
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     // Assuming CategoryState is { income: string[], expense: string[] } based on AdminDashboard
     const [categories, setCategories] = useState<CategoryState>(DEFAULT_CATEGORIES);
     const [roles, setRoles] = useState<RoleDefinition[]>(DEFAULT_ROLES);
     const [loadingData, setLoadingData] = useState(true);
 
-    // Load Products (Real-time)
+    // [SCALABILITY] Load products via Zustand (paginated + cached) then subscribe to incremental changes
     useEffect(() => {
-        const q = query(collection(db, 'products')); // Potentially filter by branch in future
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const items: Product[] = [];
-            snapshot.forEach((doc) => {
-                items.push(doc.data() as Product);
-            });
-            // If empty, maybe fall back to mock or localStorage for migration (skip for now)
-            setProducts(items);
+        loadAllProducts().then(() => {
             setLoadingData(false);
         });
+        const unsubscribe = subscribeToProductChanges();
         return () => unsubscribe();
-    }, []);
+    }, [loadAllProducts, subscribeToProductChanges]);
 
     // Load Transactions (Real-time)
     useEffect(() => {
@@ -68,7 +68,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // - MANAGER/CASHIER: Only their branch
         let q = query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(50));
 
-        if (userProfile && userProfile.role !== 'admin-role' && userProfile.branchId) {
+        if (userProfile && userProfile.role !== Role.ADMIN && userProfile.branchId) {
             // Ideally create composite index: branchId + date
             q = query(
                 collection(db, 'transactions'),
@@ -90,12 +90,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => unsubscribeTransactions();
     }, [userProfile]);
 
+    // [SCALABILITY] Product writes delegated to Zustand store (listener auto-syncs)
+    const storeAddProduct = useProductStore(state => state.addProduct);
+    const storeUpdateProduct = useProductStore(state => state.updateProduct);
+
     const addProduct = async (product: Product) => {
-        await setDoc(doc(db, 'products', product.id), product);
+        await storeAddProduct(product);
     };
 
     const updateProduct = async (product: Product) => {
-        await updateDoc(doc(db, 'products', product.id), { ...(product as any) });
+        await storeUpdateProduct(product);
     };
 
     const deleteProduct = async (id: string) => {

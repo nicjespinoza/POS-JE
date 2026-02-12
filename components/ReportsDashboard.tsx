@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from './ui/GlassCard';
-import { getProfitAndLoss, getInventoryValuation, analyzeFinancialHealth, ReportPnL } from '../services/reportingService';
+import { getProfitAndLoss, getInventoryValuation, getProfitAndLossFast, getInventoryValuationFast, analyzeFinancialHealth, ReportPnL } from '../services/reportingService';
 import {
     DollarSign,
     TrendingUp,
@@ -28,16 +28,31 @@ export const ReportsDashboard: React.FC = () => {
     const fetchReports = async () => {
         setLoading(true);
         try {
-            // 1. Get P&L
             const start = new Date(startDate);
             const end = new Date(endDate);
             end.setHours(23, 59, 59, 999);
 
-            const pnlData = await getProfitAndLoss(start, end);
+            // [SCALABILITY] Use fast pre-aggregated P&L for full-month queries (1 read)
+            // Fall back to full scan for custom date ranges
+            const isFullMonth = start.getDate() === 1 &&
+                end.getMonth() === start.getMonth() &&
+                end.getFullYear() === start.getFullYear();
+
+            let pnlData: ReportPnL;
+            if (isFullMonth) {
+                pnlData = await getProfitAndLossFast(start.getFullYear(), start.getMonth() + 1);
+            } else {
+                pnlData = await getProfitAndLoss(start, end);
+            }
             setPnl(pnlData);
 
-            // 2. Get Inventory Value (Current Snapshot)
-            const invVal = await getInventoryValuation();
+            // [SCALABILITY] Use pre-aggregated inventory valuation (1 read vs full scan)
+            let invVal: number;
+            try {
+                invVal = await getInventoryValuationFast();
+            } catch {
+                invVal = await getInventoryValuation();
+            }
             setInventoryValue(invVal);
 
             // 3. AI Analysis

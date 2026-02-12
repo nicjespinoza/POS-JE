@@ -296,17 +296,22 @@ export const adjustStock = async (
 
 /**
  * Crear resumen de inventario consolidado para Admin
+ * [SCALABILITY] Optimized: Uses Map pre-index for O(I + P*B) instead of O(P*B*I)
  */
 export const createInventorySummary = (
     products: Product[],
     inventory: InventoryItem[],
     branches: Branch[]
 ): InventorySummary[] => {
+    // Pre-index inventory for O(1) lookups instead of O(I) .find() per iteration
+    const inventoryMap = new Map<string, InventoryItem>();
+    for (const inv of inventory) {
+        inventoryMap.set(`${inv.productId}_${inv.branchId}`, inv);
+    }
+
     return products.map(product => {
         const stockByBranch = branches.map(branch => {
-            const inventoryItem = inventory.find(
-                inv => inv.productId === product.id && inv.branchId === branch.id
-            );
+            const inventoryItem = inventoryMap.get(`${product.id}_${branch.id}`);
             const stock = inventoryItem?.stock ?? 0;
             return {
                 branchId: branch.id,
@@ -427,17 +432,20 @@ export const processAtomicSale = async (
             for (const item of items) {
                 // Fetch optimistic candidates
                 // NOTE: Users must create a Composite Index: collection: inventory_batches, fields: [productId, branchId, remainingStock, createdAt]
+                // [SCALABILITY] Limited FIFO query: reads max 10 batches instead of all active batches
+                // Requires composite index: productId ASC, branchId ASC, remainingStock ASC, createdAt ASC
                 const q = query(
                     collection(db, 'inventory_batches'),
                     where('productId', '==', item.productId),
                     where('branchId', '==', item.branchId),
-                    where('remainingStock', '>', 0)
-                    // orderBy('createdAt', 'asc') // Enabling this requires index creation!
+                    where('remainingStock', '>', 0),
+                    orderBy('remainingStock'),
+                    orderBy('createdAt', 'asc'),
+                    limit(10)
                 );
                 const batchQuerySnap = await getDocs(q);
                 const candidates = batchQuerySnap.docs
-                    .map(d => ({ ...d.data(), id: d.id } as InventoryBatch))
-                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt)); // JS Sort to implement FIFO if index missing
+                    .map(d => ({ ...d.data(), id: d.id } as InventoryBatch));
 
                 let leftToFill = item.quantity;
 
