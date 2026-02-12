@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Search, ShoppingBag, Plus, Minus, Trash2, Edit2, X, CreditCard, Banknote, Landmark,
     Smartphone, ArrowLeft, CheckCircle2, History, LayoutGrid, Sun, Moon, LogOut,
@@ -14,6 +14,7 @@ import { processAtomicSale } from '../../services/inventoryService'; // Updated 
 import { doc, getDoc } from 'firebase/firestore'; // Check if needed, maybe for specific actions
 import { db } from '../../lib/firebase';
 import { POSInventory } from './POSInventory';
+import { VirtualProductGrid } from '../VirtualProductGrid';
 
 // Types for POS Component
 
@@ -205,6 +206,27 @@ export const POS: React.FC = () => {
 
     const getCategoryColor = (cat: string) => 'border-gray-200 text-gray-500'; // Simplified
 
+    // [SCALABILITY] Product card renderer for VirtualProductGrid
+    const renderProductCard = useCallback((product: Product) => {
+        const isOutOfStock = product.stock <= 0;
+        return (
+            <GlassCard
+                onClick={() => !isOutOfStock && addToCart(product)}
+                className={`group relative overflow-hidden border-0 cursor-pointer transition-all hover:bg-white/60 dark:hover:bg-white/10 ${isOutOfStock ? 'opacity-50 grayscale' : ''} p-4 h-full`}
+            >
+                <div className="aspect-square w-full rounded-xl mb-3 overflow-hidden">
+                    <ProductCardImage src={product.image} alt={product.name} isOutOfStock={isOutOfStock} />
+                </div>
+                <h3 className="font-semibold dark:text-white truncate">{product.name}</h3>
+                <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500">{product.category}</span>
+                    <span className="font-bold dark:text-white">{currency.symbol}{product.price.toFixed(2)}</span>
+                </div>
+                <div className="text-xs text-slate-400 mt-1">Stock: {product.stock}</div>
+            </GlassCard>
+        );
+    }, [currency.symbol, addToCart]);
+
     return (
         <div className={`flex flex-col h-screen bg-[#f0f0f3] dark:bg-black text-slate-900 dark:text-white transition-colors duration-300 ${isDark ? 'dark' : ''}`}>
             {/* Header */}
@@ -278,31 +300,19 @@ export const POS: React.FC = () => {
                         </div>
                     </GlassCard>
 
-                    {/* Grid */}
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-                        <div className="grid gap-4 pb-20 md:pb-0" style={{ gridTemplateColumns: `repeat(${layoutConfig.columns}, minmax(0, 1fr))` }}>
-                            {filteredProducts.map(product => {
-                                const isOutOfStock = product.stock <= 0;
-                                return (
-                                    <GlassCard
-                                        key={product.id}
-                                        onClick={() => !isOutOfStock && addToCart(product)}
-                                        className={`group relative overflow-hidden border-0 cursor-pointer transition-all hover:bg-white/60 dark:hover:bg-white/10 ${isOutOfStock ? 'opacity-50 grayscale' : ''} p-4`}
-                                    >
-                                        <div className="aspect-square w-full rounded-xl mb-3 overflow-hidden">
-                                            <ProductCardImage src={product.image} alt={product.name} isOutOfStock={isOutOfStock} />
-                                        </div>
-                                        <h3 className="font-semibold dark:text-white truncate">{product.name}</h3>
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="text-slate-500">{product.category}</span>
-                                            <span className="font-bold dark:text-white">{currency.symbol}{product.price.toFixed(2)}</span>
-                                        </div>
-                                        <div className="text-xs text-slate-400 mt-1">Stock: {product.stock}</div>
-                                    </GlassCard>
-                                )
-                            })}
-                        </div>
-                    </div>
+                    {/* [SCALABILITY] Virtualized Product Grid - only renders visible cards */}
+                    <VirtualProductGrid
+                        products={filteredProducts}
+                        columns={layoutConfig.columns}
+                        density={layoutConfig.density}
+                        renderProduct={renderProductCard}
+                        emptyMessage={
+                            <div className="flex-1 flex flex-col items-center justify-center py-20 text-slate-400 dark:text-gray-600">
+                                <ShoppingBag size={64} className="mb-4 opacity-20" />
+                                <p className="text-lg">No se encontraron productos.</p>
+                            </div>
+                        }
+                    />
                 </div>
 
                 {/* Sidebar Cart */}
