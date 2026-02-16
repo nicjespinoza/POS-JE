@@ -4,75 +4,138 @@
             "collectionGroup": "transactions",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "date", "order": "DESCENDING" }
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "DESCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "inventory_movements",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "createdAt", "order": "DESCENDING" }
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "inventory_batches",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "productId", "order": "ASCENDING" },
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "remainingStock", "order": "ASCENDING" },
-                { "fieldPath": "createdAt", "order": "ASCENDING" }
+                {
+                    "fieldPath": "productId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "remainingStock",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "ASCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "inventory_batches",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "remainingStock", "order": "ASCENDING" }
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "remainingStock",
+                    "order": "ASCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "journal_entries",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "status", "order": "ASCENDING" },
-                { "fieldPath": "date", "order": "ASCENDING" }
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "ASCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "orders",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "userId", "order": "ASCENDING" },
-                { "fieldPath": "createdAt", "order": "DESCENDING" }
+                {
+                    "fieldPath": "userId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "products",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "category", "order": "ASCENDING" },
-                { "fieldPath": "name", "order": "ASCENDING" }
+                {
+                    "fieldPath": "category",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "name",
+                    "order": "ASCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "journal_entries",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "status", "order": "ASCENDING" },
-                { "fieldPath": "date", "order": "ASCENDING" }
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "ASCENDING"
+                }
             ]
         },
         {
             "collectionGroup": "inventory",
             "queryScope": "COLLECTION",
             "fields": [
-                { "fieldPath": "branchId", "order": "ASCENDING" },
-                { "fieldPath": "productId", "order": "ASCENDING" }
+                {
+                    "fieldPath": "branchId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "productId",
+                    "order": "ASCENDING"
+                }
             ]
         }
     ],

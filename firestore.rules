@@ -3,39 +3,35 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // ============================================================
-    // HELPER FUNCTIONS
+    // HELPER FUNCTIONS (OPTIMIZED WITH CUSTOM CLAIMS)
     // ============================================================
     
+    // Check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    // Safe user data retrieval - handles missing user documents
-    function getUserData() {
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return userDoc.exists ? userDoc.data : null;
-    }
-    
+    // Role checks using Custom Claims (no database reads = faster & cheaper)
+    // Requires running scripts/set-custom-claims.js for users
     function hasRole(role) {
-      let userData = getUserData();
-      return userData != null && userData.role == role;
+      return isAuthenticated() && request.auth.token.role == role;
     }
     
     function isAdmin() {
-      return isAuthenticated() && hasRole('ADMIN');
+      return hasRole('ADMIN');
     }
     
     function isManager() {
-      return isAuthenticated() && (hasRole('MANAGER') || hasRole('ADMIN'));
+      return hasRole('MANAGER') || isAdmin();
     }
     
     function isCashier() {
-      return isAuthenticated() && (hasRole('CASHIER') || isManager());
+      return hasRole('CASHIER') || isManager();
     }
     
+    // Branch check using Custom Claims
     function getUserBranchId() {
-      let userData = getUserData();
-      return userData != null ? userData.branchId : null;
+      return request.auth.token.branchId;
     }
     
     // Transaction type validation - accepts INCOME and EXPENSE
@@ -60,26 +56,19 @@ service cloud.firestore {
     // ============================================================
     
     // --- Users Collection ---
-    // NOTE: read is open to any authenticated user to avoid recursive get() in rules.
-    // The getUserData() helper reads users/{uid}, so the users collection rule
-    // CANNOT call isManager()/isAdmin() without creating a circular reference.
+    // Users can read strict profile data. 
+    // Only Admin can delete or change critical fields via Admin SDK (claims).
     match /users/{userId} {
       allow read: if isAuthenticated();
       
-      // CREATE: User can only create their own profile
-      allow create: if isAuthenticated() && 
-        request.auth.uid == userId;
+      // CREATE: User can create their own initial profile
+      allow create: if isAuthenticated() && request.auth.uid == userId;
       
-      // UPDATE: Self-update CANNOT change role or branchId (anti-escalation)
-      // Admin check uses getUserData() which is safe here (not self-referential
-      // because the update rule reads the EXISTING doc, not the one being written)
+      // UPDATE: Users can update basic info, but NOT role or branchId
+      // These are now managed via Auth Claims, so even if they change it in doc,
+      // it won't affect security privilegies.
       allow update: if isAuthenticated() && (
-        (
-          request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role &&
-          request.resource.data.branchId == resource.data.branchId
-        ) || 
-        isAdmin()
+        request.auth.uid == userId || isAdmin()
       );
       
       allow delete: if isAdmin();
@@ -92,11 +81,6 @@ service cloud.firestore {
     }
 
     // --- Transactions Collection ---
-    // SECURITY REQUIREMENTS:
-    // - Branch isolation: Users only see transactions from their branch
-    // - Role-based creation: Cashiers+ can create, Managers+ can update/delete
-    // - Type validation: Must be INCOME or EXPENSE
-    // - Data integrity: Required fields validated
     match /transactions/{transactionId} {
       // READ: Admin sees all. Others only see their branch transactions.
       allow get: if isAuthenticated() && (
@@ -110,8 +94,6 @@ service cloud.firestore {
       );
       
       // CREATE: Cashier+ can create transactions for their branch only
-      // Validates: branch matches user, amount > 0, valid type (INCOME/EXPENSE), 
-      // required fields present
       allow create: if isCashier() && isValidTransactionData(request.resource.data) &&
         (
           isAdmin() || 
@@ -190,8 +172,7 @@ service cloud.firestore {
         isAdmin() || 
         resource.data.branchId == getUserBranchId()
       );
-      // Cashier+ can create movements for their own branch
-      // Must include required fields and userId must match auth (admin exempt)
+      
       allow create: if isCashier() && 
         request.resource.data.keys().hasAll(['productId', 'branchId', 'type', 'quantity', 'userId']) &&
         (
@@ -226,7 +207,7 @@ service cloud.firestore {
         isAdmin() || 
         resource.data.branchId == getUserBranchId()
       );
-      // Manager+ can create/update batches for their branch
+      
       allow create: if isManager() && (
         isAdmin() || 
         request.resource.data.branchId == getUserBranchId()
@@ -245,18 +226,15 @@ service cloud.firestore {
         isAdmin() || 
         resource.data.branchId == getUserBranchId()
       );
-      // Created during atomic sale transactions by Cashier+
       allow create: if isCashier() && 
         request.resource.data.keys().hasAll(['date', 'description', 'lines', 'totalAmount', 'branchId', 'createdBy']) &&
         request.resource.data.createdBy == request.auth.uid;
-      // Only admin can modify posted entries
       allow update, delete: if isAdmin();
     }
 
     // --- Financial Summaries (pre-aggregated by Cloud Functions) ---
     match /financial_summaries/{summaryId} {
       allow read: if isAuthenticated() && isManager();
-      // Only Cloud Functions can write (admin SDK bypasses rules)
       allow create, update, delete: if false;
     }
 
@@ -290,14 +268,6 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid
       );
       allow create, update, delete: if false;
-    }
-    
-    // --- Fallback: Allow authenticated access (TEMPORARY for setup-db) ---
-    // TODO: Revert to deny-all after setup is confirmed working
-    match /{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
     }
   }
 }

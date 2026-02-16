@@ -135,7 +135,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     price: '',
     category: '',
     stock: '',
-    image: ''
+    image: '',
+    images: [] as string[],
+    discount: ''
   });
 
   // Reset category selection when changing settings tab
@@ -167,11 +169,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         price: editingProduct.price.toString(),
         category: editingProduct.category,
         stock: editingProduct.stock.toString(),
-        image: editingProduct.image
+        image: editingProduct.image,
+        images: editingProduct.images || [],
+        discount: (editingProduct.discount || '').toString()
       });
       setShowProductModal(true);
     } else {
-      setProductForm({ name: '', price: '', category: '', stock: '', image: '' });
+      setProductForm({
+        name: '', price: '', category: '', stock: '', image: '', images: [], discount: ''
+      });
     }
   }, [editingProduct]);
 
@@ -574,29 +580,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     const price = parseFloat(productForm.price);
     const stock = parseInt(productForm.stock);
+    const discount = parseInt(productForm.discount) || 0;
+    const validImages = productForm.images.filter(url => url && url.trim() !== '');
 
     if (!productForm.name || isNaN(price) || price < 0) {
       alert('Por favor, ingresa datos válidos. El precio debe ser mayor o igual a 0.');
       return;
     }
 
+    const productData = {
+      name: productForm.name,
+      price: price,
+      category: productForm.category,
+      stock: isNaN(stock) ? 0 : stock,
+      image: productForm.image,
+      images: validImages,
+      discount: discount
+    };
+
     if (editingProduct) {
       onUpdateProduct({
         ...editingProduct,
-        name: productForm.name,
-        price: price,
-        category: productForm.category,
-        stock: isNaN(stock) ? 0 : stock,
-        image: productForm.image
+        ...productData
       });
     } else {
       onAddProduct({
         id: crypto.randomUUID(),
-        name: productForm.name,
-        price: price,
-        category: productForm.category || 'General',
-        stock: isNaN(stock) ? 0 : stock,
-        image: productForm.image
+        ...productData,
+        category: productForm.category || 'General' // ensuring fallback
       });
     }
     setShowProductModal(false);
@@ -1133,17 +1144,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="space-y-4">
+            <form onSubmit={handleSaveProduct}>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Nombre</label>
+                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Nombre del Producto</label>
                   <input
+                    autoFocus
                     required
                     type="text"
                     value={productForm.name}
                     onChange={e => setProductForm({ ...productForm, name: e.target.value })}
                     className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-purple-500 transition-colors text-slate-900 dark:text-white"
-                    placeholder="Ej. Auriculares Pro"
+                    placeholder="Ej. Zapato Deportivo Nike"
                   />
                 </div>
                 <div>
@@ -1160,6 +1172,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Descuento (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={productForm.discount}
+                    onChange={e => setProductForm({ ...productForm, discount: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-purple-500 transition-colors text-slate-900 dark:text-white"
+                    placeholder="0"
+                  />
+                </div>
+                <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Stock</label>
                   <input
                     type="number"
@@ -1170,18 +1194,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     placeholder="0"
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Categoría</label>
-                  <input
-                    type="text"
-                    value={productForm.category}
-                    onChange={e => setProductForm({ ...productForm, category: e.target.value })}
-                    className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-purple-500 transition-colors text-slate-900 dark:text-white"
-                    placeholder="O escribe una nueva..."
-                  />
+                  <div className="relative">
+                    <input
+                      list="category-suggestions"
+                      type="text"
+                      value={productForm.category}
+                      onChange={e => setProductForm({ ...productForm, category: e.target.value })}
+                      className="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-purple-500 transition-colors text-slate-900 dark:text-white"
+                      placeholder="Seleccionar o escribir..."
+                    />
+                    <datalist id="category-suggestions">
+                      <option value="Hombre" />
+                      <option value="Mujer" />
+                      <option value="Niños" />
+                      <option value="Rebajas" />
+                      <option value="Promociones" />
+                    </datalist>
+                  </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">URL Imagen</label>
+                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-gray-300">Imagen Principal (Portada)</label>
                   <input
                     type="url"
                     value={productForm.image}
@@ -1190,11 +1224,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     placeholder="https://..."
                   />
                 </div>
+
+                <div className="col-span-2 space-y-3 pt-2 border-t border-gray-100 dark:border-white/5">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-gray-300">Galería de Imágenes (Máx 5)</label>
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <div key={index} className="flex gap-2 items-center">
+                      <span className="text-xs text-gray-400 w-4">{index + 1}.</span>
+                      <input
+                        type="url"
+                        value={productForm.images[index] || ''}
+                        onChange={e => {
+                          const newImages = [...productForm.images];
+                          newImages[index] = e.target.value;
+                          setProductForm({ ...productForm, images: newImages });
+                        }}
+                        className="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 outline-none focus:border-purple-500 transition-colors text-slate-900 dark:text-white text-sm"
+                        placeholder={`URL Imagen Adicional ${index + 1}`}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-black font-bold mt-4 hover:opacity-90 transition-opacity flex justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-black font-bold mt-6 hover:opacity-90 transition-opacity flex justify-center gap-2"
               >
                 <Save size={20} /> Guardar Producto
               </button>

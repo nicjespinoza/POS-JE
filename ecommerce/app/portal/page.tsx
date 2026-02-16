@@ -121,11 +121,7 @@ export default function StaffPortalScreen() {
             await signInWithEmailAndPassword(auth, email, pass);
             // Login successful — don't navigate immediately!
             // Wait for AuthContext to finish loading the profile first.
-            if (selectedRole === 'admin') {
-                setPendingRedirect('/admin');
-            } else {
-                setPendingRedirect('/pos');
-            }
+            setPendingRedirect('/sys/');
         } catch (err: any) {
             // Login failed
 

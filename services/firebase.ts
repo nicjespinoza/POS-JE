@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, orderBy, limit, Timestamp, runTransaction, serverTimestamp, FieldValue, DocumentData, startAfter, writeBatch } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 // App Check - descomentar cuando se configure reCAPTCHA
@@ -65,6 +65,7 @@ export {
   onAuthStateChanged,
   runTransaction,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   orderBy,
   limit,
   startAfter,

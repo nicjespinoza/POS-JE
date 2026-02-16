@@ -68,7 +68,7 @@ export const createStockTransfer = async (
 
             let quantityToFulfill = item.quantity;
             let totalCost = 0;
-            const sourceBatches: StockTransferItem['sourceBatches'] = [];
+            const sourceBatches: NonNullable<StockTransferItem['sourceBatches']> = [];
 
             for (const batch of candidates) {
                 if (quantityToFulfill <= 0) break;

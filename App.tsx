@@ -6,7 +6,7 @@ import { Role, Transaction, Product, RoleDefinition, TransactionType } from './t
 import { CURRENCIES } from './constants';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider, useData } from './contexts/DataContext';
-import { signInWithPopup, googleProvider, auth, signOut } from './services/firebase';
+import { signInWithPopup, googleProvider, auth, signOut, signInWithEmailAndPassword } from './services/firebase';
 
 const AppContent: React.FC = () => {
   const { user, userProfile, isAdmin, isManager, isCashier, loading: authLoading } = useAuth();
@@ -21,15 +21,11 @@ const AppContent: React.FC = () => {
     addTransaction,
     updateTransaction,
     deleteTransaction,
-    // Add missing category/role update methods to DataContext if needed, 
-    // for now we might need to mock them or implement them in DataContext
   } = useData();
 
   const [currentRole, setCurrentRole] = useState<Role>(Role.GUEST);
   const [isDark, setIsDark] = useState(true);
   const [currency, setCurrency] = useState(CURRENCIES[0]);
-
-  // Tax and Low Stock could also be moved to Firestore Global Settings collection
   const [taxRate, setTaxRate] = useState<number>(10);
   const [lowStockThreshold, setLowStockThreshold] = useState<number>(5);
   const [adminEmail, setAdminEmail] = useState<string>('');
@@ -54,14 +50,16 @@ const AppContent: React.FC = () => {
 
   const toggleTheme = () => setIsDark(!isDark);
 
-  const handleLogin = async (requestedRole: Role) => {
+  const handleLogin = async (email?: string, password?: string) => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      // Role is determined by Firestore profile in AuthContext, 
-      // but we could set a transient state if needed.
-    } catch (error) {
+      if (email && password) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
+    } catch (error: any) {
       console.error("Login failed", error);
-      alert("Error al iniciar sesión con Google");
+      alert("Error al iniciar sesión: " + error.message);
     }
   };
 

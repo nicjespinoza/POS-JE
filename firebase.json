@@ -5,6 +5,13 @@
     },
     "hosting": {
         "public": "dist",
+        "cleanUrls": true,
+        "rewrites": [
+            {
+                "source": "/sys/**",
+                "destination": "/sys/index.html"
+            }
+        ],
         "ignore": [
             "firebase.json",
             "**/.*",
